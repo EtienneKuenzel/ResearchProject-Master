@@ -1,6 +1,7 @@
 .idea/
 data/cifar-100-python.tar.gz
 data_cifar10/cifar-10-python.tar.gz
+data/cifar-100-python/train
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
