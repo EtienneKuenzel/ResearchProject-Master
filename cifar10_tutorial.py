@@ -44,7 +44,7 @@ class Net(nn.Module):
         # Adjusted in_features based on pooling and reduced spatial size
         self.fc1 = nn.Linear(in_features=32 * 2 * 2, out_features=16)
         self.fc2 = nn.Linear(in_features=16, out_features=16)
-        self.fc3 = nn.Linear(in_features=16, out_features=2)
+        self.fc3 = nn.Linear(in_features=16, out_features=100)
 
         # Optional Dropout Layer to improve generalization
     def forward(self, x):
@@ -106,15 +106,17 @@ if __name__ == '__main__':
 
     # Train the network
     a= 0
-    for x in range(1000): #max 50
-        labels_to_keep = [(0+2*x)%100, (1+2*x)%100]
-        a += 1
+    labels_to_keep = [0, 1, 2, 3, 4]
+    for x in range(19):
+        a+=1
         # Apply the filter to the train and test sets and add their dataloader to the array
         trainloader = torch.utils.data.DataLoader(filter_data(trainset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
         testloader  = torch.utils.data.DataLoader(filter_data(testset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
+        labels_to_keep.extend(range(labels_to_keep[-1] + 1, labels_to_keep[-1] + 6))
+        print(labels_to_keep)
         # get some random training images
         #imshow(torchvision.utils.make_grid(next(iter(trainsets[-1]))[0]))
-        for epoch in range(5):  # 20 good time to get used to data pair
+        for epoch in range(1):  # 20 good time to get used to data pair
             for i, data in enumerate(trainloader, 0):
                 inputs, labels = data
                 labels = (labels == labels.max()).long()  # Convert labels to binary as required
