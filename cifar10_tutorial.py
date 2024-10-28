@@ -8,57 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets
 import csv
-# Define a Convolutional Neural Network
-class Nettest(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 2)
-
-    def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
-
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        # Convolutional + Max-Pooling Layers
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=16, kernel_size=3, stride=1)  # kernel size reduced to 3
-        self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)  # pool stride changed to 2
-        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32, kernel_size=3, stride=1)
-        self.pool2 = nn.MaxPool2d(kernel_size=2, stride=2)  # pool stride changed to 2
-        self.conv3 = nn.Conv2d(in_channels=32, out_channels=32, kernel_size=3, stride=1)
-        self.pool3 = nn.MaxPool2d(kernel_size=2, stride=2)  # pool stride changed to 2
-
-        # Fully Connected Layers
-        # Adjusted in_features based on pooling and reduced spatial size
-        self.fc1 = nn.Linear(in_features=32 * 2 * 2, out_features=16)
-        self.fc2 = nn.Linear(in_features=16, out_features=16)
-        self.fc3 = nn.Linear(in_features=16, out_features=100)
-
-        # Optional Dropout Layer to improve generalization
-    def forward(self, x):
-        x = self.pool1(F.relu(self.conv1(x)))
-        x = self.pool2(F.relu(self.conv2(x)))
-        x = self.pool3(F.relu(self.conv3(x)))
-
-        # Flatten the output for the fully connected layers
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+from neuralnets import StandardNet
 
 def filter_data(dataset, labels_to_keep):
     filtered_data = []
@@ -99,8 +49,7 @@ if __name__ == '__main__':
 
     # Instantiate the network
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    net = Net()
-    # Define a Loss function and optimizer
+    net = StandardNet()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
@@ -113,39 +62,24 @@ if __name__ == '__main__':
         trainloader = torch.utils.data.DataLoader(filter_data(trainset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
         testloader  = torch.utils.data.DataLoader(filter_data(testset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
         labels_to_keep.extend(range(labels_to_keep[-1] + 1, labels_to_keep[-1] + 6))
-        print(labels_to_keep)
-        # get some random training images
         #imshow(torchvision.utils.make_grid(next(iter(trainsets[-1]))[0]))
-        for epoch in range(1):  # 20 good time to get used to data pair
-            for i, data in enumerate(trainloader, 0):
-                inputs, labels = data
-                labels = (labels == labels.max()).long()  # Convert labels to binary as required
-
-                # zero the parameter gradients
+        for epoch in range(1):  #
+            for inputs, labels  in trainloader:#training of network
                 optimizer.zero_grad()
-
-                # forward + backward + optimize
                 outputs = net(inputs)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
-        print('Finished Training' + str())
 
         with open('accuracy_results.csv', mode='a', newline='') as file:
             writer = csv.writer(file)
-            # Check accuracy on the whole dataset
-            correct = 0
-            total = 0
+            correct, total = 0, 0
             with torch.no_grad():
-                for data in testloader:
-                    images, labels = data
-                    labels = (labels == labels.max()).long()
+                for images, labels in testloader:
                     _, predicted = torch.max(net(images), 1)
-                    total += labels.size(0)
                     correct += (predicted == labels).sum().item()
+                    total += labels.size(0)
 
             accuracy = 100 * correct / total
-            print(f'Accuracy of the network in differentiating the two images: {accuracy:.2f} %')
-
-            # Write the accuracy to the CSV file
+            print(f'Accuracy of the network: {accuracy:.2f} %')
             writer.writerow([a, accuracy])
