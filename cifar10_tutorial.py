@@ -1,4 +1,6 @@
 import torch
+import pandas as pd
+import os
 import torchvision
 import torchvision.transforms as transforms
 import torch.nn as nn
@@ -59,30 +61,69 @@ def imshow(img):
     plt.show()
 
 
+
+def save_label_group(batch_number, images, labels):
+    """Saves images and labels of a group of 100 labels."""
+    file_name = f"label_group_batch_{batch_number}.npz"
+    np.savez(file_name, images=images, labels=labels)
+
+
+def save_filtered_labels(images, labels, target_labels, output_file):
+    """Saves images and labels for specified target labels into one file."""
+    # Filter images and labels that match the target labels
+    filtered_indices = np.isin(labels, target_labels)
+    filtered_images = images[filtered_indices]
+    filtered_labels = labels[filtered_indices]
+    np.savez(output_file, images=filtered_images, labels=filtered_labels)
+
+
+import os
+import numpy as np
+
+
+def save_filtered_labels(images, labels, target_labels, output_file):
+    # Check if file already exists
+    if os.path.exists(output_file):
+        # Load existing data
+        existing_data = np.load(output_file)
+        existing_images = existing_data['images']
+        existing_labels = existing_data['labels']
+
+        # Append new data to the existing arrays
+        images = np.concatenate((existing_images, images), axis=0)
+        labels = np.concatenate((existing_labels, labels), axis=0)
+
+    # Filter images and labels based on target labels
+    mask = np.isin(labels, list(target_labels))
+    filtered_images = images[mask]
+    filtered_labels = labels[mask]
+
+    # Save combined data back to the .npz file
+    np.savez(output_file, images=filtered_images, labels=filtered_labels)
+    print(f"Saved updated {output_file}")
+
+
 if __name__ == '__main__':
-    batch_folder = 'ImgNet/Imagenet32_train'  # Replace with your file path
-    all_images = []
-    all_labels = []
+    # Load the dataset
+    dataset = 'ImgNet/Imagenet32_train/label_100_to_199_data.npz'  # Replace with your file path
+    data = np.load(dataset)
 
-    # Load each batch and concatenate the images and labels
-    for batch_file in sorted(os.listdir(batch_folder)):
-        if batch_file.startswith("train_data_batch"):
-            file_path = os.path.join(batch_folder, batch_file)
-            images, labels = load_batch(file_path)
-            all_images.append(images)
-            all_labels.append(labels)
-            break  # Only load the first batch for demonstration
+    # Assuming your .npz file has keys 'images' and 'labels'
+    all_images = data['images']  # Shape: (num_images, height, width, channels)
+    all_labels = data['labels']  # Shape: (num_images,)
 
-    # Combine all batches
-    all_images = preprocess_images(np.concatenate(all_images, axis=0))
-    all_labels = np.concatenate(all_labels, axis=0)
+    # Preprocess images
+    all_images = preprocess_images(all_images)
 
     for x in range(10):
-        mask = (all_labels == x*2) | (all_labels == (x*2)+1)
+        mask = (all_labels == 199) | (all_labels == 198)
         combined_dataloader = create_dataloader(all_images[mask], all_labels[mask], batch_size=1)
         print(len(combined_dataloader))
         for batch_images, batch_labels in combined_dataloader:
             imshow(torchvision.utils.make_grid(batch_images))
+            print(batch_labels)
+            break
+
 
 
 
