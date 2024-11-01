@@ -8,6 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 from torchvision import datasets
 import csv
+import pickle
+import numpy as np
+import torch
+import os
+from torch.utils.data import DataLoader, TensorDataset
 from neuralnets import StandardNet
 
 def filter_data(dataset, labels_to_keep):
@@ -30,6 +35,22 @@ def filter_data(dataset, labels_to_keep):
 
     return new_dataset
 
+def load_batch(file_path):
+    with open(file_path, 'rb') as f:
+        batch = pickle.load(f, encoding='latin1')  # 'latin1' is often needed for Python 2-serialized data
+    images = np.array(batch['data'], dtype=np.float32)  # Adjust key if different
+    labels = np.array(batch['labels'], dtype=np.int64)  # Adjust key if different
+    return images, labels
+def preprocess_images(images):
+    images = images.reshape(-1, 3, 32, 32)  # Reshape to (N, C, H, W)
+    images /= 255.0  # Normalize if required
+    return images
+def create_dataloader(images, labels, batch_size=64):
+    tensor_images = torch.tensor(images)
+    tensor_labels = torch.tensor(labels)
+    dataset = TensorDataset(tensor_images, tensor_labels)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return dataloader
 
 def imshow(img):
     img = img / 2 + 0.5  # unnormalize
@@ -37,7 +58,35 @@ def imshow(img):
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
 
+
 if __name__ == '__main__':
+    batch_folder = 'ImgNet/Imagenet32_train'  # Replace with your file path
+    all_images = []
+    all_labels = []
+
+    # Load each batch and concatenate the images and labels
+    for batch_file in sorted(os.listdir(batch_folder)):
+        if batch_file.startswith("train_data_batch"):
+            file_path = os.path.join(batch_folder, batch_file)
+            images, labels = load_batch(file_path)
+            all_images.append(images)
+            all_labels.append(labels)
+            break  # Only load the first batch for demonstration
+
+    # Combine all batches
+    all_images = preprocess_images(np.concatenate(all_images, axis=0))
+    all_labels = np.concatenate(all_labels, axis=0)
+
+    for x in range(10):
+        mask = (all_labels == x*2) | (all_labels == (x*2)+1)
+        combined_dataloader = create_dataloader(all_images[mask], all_labels[mask], batch_size=1)
+        print(len(combined_dataloader))
+        for batch_images, batch_labels in combined_dataloader:
+            imshow(torchvision.utils.make_grid(batch_images))
+
+
+
+    #Continual CIFAR
     # Define the batch size
     batch_size = 10
     # Define transformations
