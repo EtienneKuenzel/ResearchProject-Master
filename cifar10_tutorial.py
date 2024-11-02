@@ -53,7 +53,12 @@ def imshow(img):
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
     plt.show()
-
+def process_batch_labels(batch_labels):
+    unique_labels = torch.unique(batch_labels)
+    label_mapping = {unique_labels[0].item(): 0, unique_labels[1].item(): 1}
+    # Use vectorized operations to map the labels
+    batch_labels = torch.tensor([label_mapping[label.item()] for label in batch_labels], dtype=torch.long)
+    return batch_labels
 
 
 
@@ -65,6 +70,7 @@ if __name__ == '__main__':
     net = StandardNetCIN().to(device)  # Make sure to move the model to the appropriate device
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    tasknumber = 0
     for y in range(5):#5 for more than 2000 pair runs
         a=0
         print("Round" + str(1))
@@ -78,20 +84,11 @@ if __name__ == '__main__':
 
             for x in range(44):#44 for more than 2000 pair runs
                 mask = (all_labels == (x * 2) + 1 + (100 * a)) | (all_labels == (x * 2) + 2 + (100 * a)+y*2)
-                filtered_images = all_images[mask]
-                filtered_labels = all_labels[mask]
-
-                # Initialize lists for train and test images/labels
-                train_images = []
-                train_labels = []
-                test_images = []
-                test_labels = []
-
-                # Get unique labels in the filtered dataset
-                unique_labels = np.unique(filtered_labels)
+                filtered_images, filtered_labels = all_images[mask], all_labels[mask]
+                train_images, train_labels, test_images, test_labels = [], [], [], []
 
                 # Split images into training and testing datasets
-                for label in unique_labels:
+                for label in np.unique(filtered_labels):
                     indices = np.where(filtered_labels == label)[0]
                     np.random.shuffle(indices)
 
@@ -114,11 +111,9 @@ if __name__ == '__main__':
                 # Create DataLoaders for training and testing
                 train_dataloader = create_dataloader(train_images, train_labels, batch_size=100)
                 test_dataloader = create_dataloader(test_images, test_labels, batch_size=200)
-                for epoch in range(250):  #250
+                for epoch in range(1):  #250
                     for batch_images, batch_labels in train_dataloader:
-                        unique_labels = torch.unique(batch_labels)
-                        label_mapping = {unique_labels[0].item(): 0, unique_labels[1].item(): 1}
-                        batch_labels = torch.tensor([label_mapping[label.item()] for label in batch_labels],dtype=torch.long)
+                        batch_labels = process_batch_labels(batch_labels)
 
                         optimizer.zero_grad()
                         outputs = net(batch_images)
@@ -127,21 +122,18 @@ if __name__ == '__main__':
                         optimizer.step()
                 with open('accuracy_results.csv', mode='a', newline='') as file:
                     writer = csv.writer(file)
+                    tasknumber +=1
                     correct, total = 0, 0
                     with torch.no_grad():
-                        print(len(test_dataloader))
                         for batch_images, batch_labels in test_dataloader:
                             #imshow(torchvision.utils.make_grid(batch_images))
-                            unique_labels = torch.unique(batch_labels)
-                            label_mapping = {unique_labels[0].item(): 0, unique_labels[1].item(): 1}
-                            batch_labels = torch.tensor([label_mapping[label.item()] for label in batch_labels],dtype=torch.long)
+                            batch_labels = process_batch_labels(batch_labels)
                             _, predicted = torch.max(net(batch_images), 1)
                             correct += (predicted == batch_labels).sum().item()
                             total += batch_labels.size(0)
-
                     accuracy = 100 * correct / total
-                    print(f'Accuracy of the network: {accuracy:.2f} %')
-                    writer.writerow([a, accuracy])
+                    print(f'Accuracy of the network: {accuracy:.2f} % in Tasknumber : {tasknumber}')
+                    writer.writerow([tasknumber, accuracy])
             a+=1
 
     #Continual CIFAR
