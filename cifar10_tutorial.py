@@ -15,7 +15,7 @@ import numpy as np
 import torch
 import os
 from torch.utils.data import DataLoader, TensorDataset
-from neuralnets import StandardNet
+from neuralnets import StandardNetCC100, StandardNetCIN
 
 def filter_data(dataset, labels_to_keep):
     filtered_data = []
@@ -37,12 +37,6 @@ def filter_data(dataset, labels_to_keep):
 
     return new_dataset
 
-def load_batch(file_path):
-    with open(file_path, 'rb') as f:
-        batch = pickle.load(f, encoding='latin1')  # 'latin1' is often needed for Python 2-serialized data
-    images = np.array(batch['data'], dtype=np.float32)  # Adjust key if different
-    labels = np.array(batch['labels'], dtype=np.int64)  # Adjust key if different
-    return images, labels
 def preprocess_images(images):
     images = images.reshape(-1, 3, 32, 32)  # Reshape to (N, C, H, W)
     images /= 255.0  # Normalize if required
@@ -62,73 +56,96 @@ def imshow(img):
 
 
 
-def save_label_group(batch_number, images, labels):
-    """Saves images and labels of a group of 100 labels."""
-    file_name = f"label_group_batch_{batch_number}.npz"
-    np.savez(file_name, images=images, labels=labels)
-
-
-def save_filtered_labels(images, labels, target_labels, output_file):
-    """Saves images and labels for specified target labels into one file."""
-    # Filter images and labels that match the target labels
-    filtered_indices = np.isin(labels, target_labels)
-    filtered_images = images[filtered_indices]
-    filtered_labels = labels[filtered_indices]
-    np.savez(output_file, images=filtered_images, labels=filtered_labels)
-
-
-import os
-import numpy as np
-
-
-def save_filtered_labels(images, labels, target_labels, output_file):
-    # Check if file already exists
-    if os.path.exists(output_file):
-        # Load existing data
-        existing_data = np.load(output_file)
-        existing_images = existing_data['images']
-        existing_labels = existing_data['labels']
-
-        # Append new data to the existing arrays
-        images = np.concatenate((existing_images, images), axis=0)
-        labels = np.concatenate((existing_labels, labels), axis=0)
-
-    # Filter images and labels based on target labels
-    mask = np.isin(labels, list(target_labels))
-    filtered_images = images[mask]
-    filtered_labels = labels[mask]
-
-    # Save combined data back to the .npz file
-    np.savez(output_file, images=filtered_images, labels=filtered_labels)
-    print(f"Saved updated {output_file}")
 
 
 if __name__ == '__main__':
-    # Load the dataset
-    dataset = 'ImgNet/Imagenet32_train/label_100_to_199_data.npz'  # Replace with your file path
-    data = np.load(dataset)
+    directory = 'ImgNet/Imagenet32_train/'  # Replace with your file path
+    # Instantiate the network
+    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    net = StandardNetCIN().to(device)  # Make sure to move the model to the appropriate device
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    for y in range(5):#5 for more than 2000 pair runs
+        a=0
+        print("Round" + str(1))
+        for filename in os.listdir(directory):
+            data = np.load(os.path.join(directory, filename))
+            all_images = data['images']  # Shape: (num_images, height, width, channels)
+            all_labels = data['labels']  # Shape: (num_images,)
 
-    # Assuming your .npz file has keys 'images' and 'labels'
-    all_images = data['images']  # Shape: (num_images, height, width, channels)
-    all_labels = data['labels']  # Shape: (num_images,)
+            # Preprocess images
+            all_images = preprocess_images(all_images)
 
-    # Preprocess images
-    all_images = preprocess_images(all_images)
+            for x in range(44):#44 for more than 2000 pair runs
+                mask = (all_labels == (x * 2) + 1 + (100 * a)) | (all_labels == (x * 2) + 2 + (100 * a)+y*2)
+                filtered_images = all_images[mask]
+                filtered_labels = all_labels[mask]
 
-    for x in range(10):
-        mask = (all_labels == 199) | (all_labels == 198)
-        combined_dataloader = create_dataloader(all_images[mask], all_labels[mask], batch_size=1)
-        print(len(combined_dataloader))
-        for batch_images, batch_labels in combined_dataloader:
-            imshow(torchvision.utils.make_grid(batch_images))
-            print(batch_labels)
-            break
+                # Initialize lists for train and test images/labels
+                train_images = []
+                train_labels = []
+                test_images = []
+                test_labels = []
 
+                # Get unique labels in the filtered dataset
+                unique_labels = np.unique(filtered_labels)
 
+                # Split images into training and testing datasets
+                for label in unique_labels:
+                    indices = np.where(filtered_labels == label)[0]
+                    np.random.shuffle(indices)
 
+                    # Select training images (600 for each label)
+                    train_indices = indices[:600]
+                    train_images.append(filtered_images[train_indices])
+                    train_labels.append(filtered_labels[train_indices])
+
+                    # Select testing images (100 for each label)
+                    test_indices = indices[600:700]
+                    test_images.append(filtered_images[test_indices])
+                    test_labels.append(filtered_labels[test_indices])
+
+                # Convert lists to numpy arrays
+                train_images = np.concatenate(train_images)
+                train_labels = np.concatenate(train_labels)
+                test_images = np.concatenate(test_images)
+                test_labels = np.concatenate(test_labels)
+
+                # Create DataLoaders for training and testing
+                train_dataloader = create_dataloader(train_images, train_labels, batch_size=100)
+                test_dataloader = create_dataloader(test_images, test_labels, batch_size=200)
+                for epoch in range(250):  #250
+                    for batch_images, batch_labels in train_dataloader:
+                        unique_labels = torch.unique(batch_labels)
+                        label_mapping = {unique_labels[0].item(): 0, unique_labels[1].item(): 1}
+                        batch_labels = torch.tensor([label_mapping[label.item()] for label in batch_labels],dtype=torch.long)
+
+                        optimizer.zero_grad()
+                        outputs = net(batch_images)
+                        loss = criterion(outputs, batch_labels)
+                        loss.backward()
+                        optimizer.step()
+                with open('accuracy_results.csv', mode='a', newline='') as file:
+                    writer = csv.writer(file)
+                    correct, total = 0, 0
+                    with torch.no_grad():
+                        print(len(test_dataloader))
+                        for batch_images, batch_labels in test_dataloader:
+                            #imshow(torchvision.utils.make_grid(batch_images))
+                            unique_labels = torch.unique(batch_labels)
+                            label_mapping = {unique_labels[0].item(): 0, unique_labels[1].item(): 1}
+                            batch_labels = torch.tensor([label_mapping[label.item()] for label in batch_labels],dtype=torch.long)
+                            _, predicted = torch.max(net(batch_images), 1)
+                            correct += (predicted == batch_labels).sum().item()
+                            total += batch_labels.size(0)
+
+                    accuracy = 100 * correct / total
+                    print(f'Accuracy of the network: {accuracy:.2f} %')
+                    writer.writerow([a, accuracy])
+            a+=1
 
     #Continual CIFAR
-    # Define the batch size
+    """# Define the batch size
     batch_size = 10
     # Define transformations
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
@@ -139,7 +156,7 @@ if __name__ == '__main__':
 
     # Instantiate the network
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    net = StandardNet()
+    net = StandardNetCC100()
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
@@ -172,4 +189,4 @@ if __name__ == '__main__':
 
             accuracy = 100 * correct / total
             print(f'Accuracy of the network: {accuracy:.2f} %')
-            writer.writerow([a, accuracy])
+            writer.writerow([a, accuracy])"""
