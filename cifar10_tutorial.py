@@ -1,16 +1,8 @@
-import torch
-import pandas as pd
-import os
-import torchvision
-import torchvision.transforms as transforms
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 import matplotlib.pyplot as plt
-import numpy as np
 from torchvision import datasets
 import csv
-import pickle
 import numpy as np
 import torch
 import os
@@ -61,28 +53,25 @@ def process_batch_labels(batch_labels):
     return batch_labels
 
 
-
-
 if __name__ == '__main__':
-    directory = 'ImgNet/Imagenet32_train/'  # Replace with your file path
+    directory = os.path.join('ImgNet', 'Imagenet32_train')
     # Instantiate the network
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
+    device = torch.device('cpu')#'cuda:0' if torch.cuda.is_available() else
     net = StandardNetCIN().to(device)  # Make sure to move the model to the appropriate device
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     tasknumber = 0
-    for y in range(5):#5 for more than 2000 pair runs
+    for y in range(5):#for more than 2000 pair runs5
         a=0
-        print("Round" + str(1))
-        for filename in os.listdir(directory):
+        for filename in sorted(os.listdir(directory)):
             data = np.load(os.path.join(directory, filename))
-            all_images = data['images']  # Shape: (num_images, height, width, channels)
-            all_labels = data['labels']  # Shape: (num_images,)
+            all_images = data['images']
+            all_labels = data['labels']
 
-            # Preprocess images
             all_images = preprocess_images(all_images)
 
-            for x in range(44):#44 for more than 2000 pair runs
+            for x in range(44):
                 mask = (all_labels == (x * 2) + 1 + (100 * a)) | (all_labels == (x * 2) + 2 + (100 * a)+y*2)
                 filtered_images, filtered_labels = all_images[mask], all_labels[mask]
                 train_images, train_labels, test_images, test_labels = [], [], [], []
@@ -111,7 +100,7 @@ if __name__ == '__main__':
                 # Create DataLoaders for training and testing
                 train_dataloader = create_dataloader(train_images, train_labels, batch_size=100)
                 test_dataloader = create_dataloader(test_images, test_labels, batch_size=200)
-                for epoch in range(1):  #250
+                for epoch in range(250):  #250
                     for batch_images, batch_labels in train_dataloader:
                         batch_labels = process_batch_labels(batch_labels)
 
