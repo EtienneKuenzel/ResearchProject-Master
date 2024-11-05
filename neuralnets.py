@@ -53,7 +53,7 @@ class StandardNetCIN(nn.Module):
         # Fully Connected Layers
         self.fc1 = nn.Linear(in_features=128 * 21 * 21, out_features=128)
         self.fc2 = nn.Linear(in_features=128, out_features=128)
-        self.fc3 = nn.Linear(in_features=128, out_features=2)
+        self.fc3 = nn.Linear(in_features=128, out_features=2)  # Head layer
 
     def forward(self, x):
         x = self.pool1(F.relu(self.conv1(x)))
@@ -67,3 +67,8 @@ class StandardNetCIN(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
+    def reset_head_weights(self):
+        nn.init.xavier_uniform_(self.fc3.weight)
+        if self.fc3.bias is not None:
+            nn.init.constant_(self.fc3.bias, 0)  # Set bias to zero if it exists
