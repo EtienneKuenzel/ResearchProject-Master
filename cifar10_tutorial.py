@@ -7,7 +7,8 @@ import numpy as np
 import torch
 import os
 from torch.utils.data import DataLoader, TensorDataset
-from neuralnets import StandardNetCC100, StandardNetCIN
+from neuralnets import Backprop, ConvNet
+from torch.nn.functional import softmax
 
 def filter_data(dataset, labels_to_keep):
     filtered_data = []
@@ -88,11 +89,18 @@ if __name__ == '__main__':
 
     # Set device to GPU if available
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+    net = ConvNet()
 
-    # Instantiate the network and move it to the chosen device
-    net = StandardNetCIN().to(device)
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    learner = Backprop(
+        net=net,
+        step_size=0.01,
+        opt="sgd",
+        loss='nll',
+        weight_decay=0.0,
+        device=device,
+        momentum=0.9
+    )
+
     tasknumber = 0
 
     for y in range(5):  # for more than 2000 pair runs5
@@ -104,81 +112,31 @@ if __name__ == '__main__':
             all_images = preprocess_images(all_images)
 
             for x in range(44):
-                net.reset_head_weights()  # Reset the head weights for new task
+                net.layers[-1].weight.data *= 0
+                net.layers[-1].bias.data *= 0
                 train_dataloader, test_dataloader = filter_split_and_create_dataloaders(all_images, all_labels, x, a, y,100, 200)
                 for epoch in range(250):  # 250
                     for batch_images, batch_labels in train_dataloader:
                         # Move images and labels to the GPU if available
                         batch_images, batch_labels = batch_images.to(device), process_batch_labels(batch_labels).to(device)
-                        optimizer.zero_grad()
-                        outputs = net(batch_images)
-                        loss = criterion(outputs, batch_labels)
-                        loss.backward()
-                        optimizer.step()
+                        loss, network_output = learner.learn(x=batch_images, target=batch_labels)
 
                 # Save accuracy after each task
                 with open('accuracy_results.csv', mode='a', newline='') as file:
                     writer = csv.writer(file)
                     tasknumber += 1
                     # Evaluation on test set
-                    correct, total = 0, 0
                     with torch.no_grad():
-                        for batch_images, batch_labels in test_dataloader:
-                            # Move images and labels to GPU for inference
-                            batch_images, batch_labels = batch_images.to(device), process_batch_labels(batch_labels).to(device)
-                            outputs = net(batch_images)
-                            _, predicted = torch.max(outputs, 1)
-                            correct += (predicted == batch_labels).sum().item()
-                            total += batch_labels.size(0)
+                        batch_images, batch_labels = next(iter(test_dataloader))
+                        # Move images and labels to GPU for inference
+                        batch_images, batch_labels = batch_images.to(device), process_batch_labels(batch_labels).to(device)
+                        outputs, _ = net.predict(batch_images)
+                        predicted_labels = torch.argmax(outputs, dim=1)
+                        correct = (predicted_labels == batch_labels).sum().item()
+                        total = batch_labels.size(0)
                     # Calculate and log accuracy
                     accuracy = 100 * correct / total
                     print(f'Accuracy of the network: {accuracy:.2f} % in Tasknumber : {tasknumber}')
                     writer.writerow([tasknumber, accuracy])
             a += 1
 
-    #Continual CIFAR
-    """# Define the batch size
-    batch_size = 10
-    # Define transformations
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-    # Load the CIFAR-100 dataset
-    trainset = torchvision.datasets.CIFAR100(root='./data', train=True, download=True, transform=transform)
-    testset = torchvision.datasets.CIFAR100(root='./data', train=False, download=True, transform=transform)
-
-
-    # Instantiate the network
-    device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    net = StandardNetCC100()
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
-
-    # Train the network
-    a= 0
-    labels_to_keep = [0, 1, 2, 3, 4]
-    for x in range(19):
-        a+=1
-        # Apply the filter to the train and test sets and add their dataloader to the array
-        trainloader = torch.utils.data.DataLoader(filter_data(trainset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
-        testloader  = torch.utils.data.DataLoader(filter_data(testset, labels_to_keep), batch_size=batch_size, shuffle=True, num_workers=2)
-        labels_to_keep.extend(range(labels_to_keep[-1] + 1, labels_to_keep[-1] + 6))
-        #imshow(torchvision.utils.make_grid(next(iter(trainsets[-1]))[0]))
-        for epoch in range(1):  #
-            for inputs, labels  in trainloader:#training of network
-                optimizer.zero_grad()
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-
-        with open('accuracy_results.csv', mode='a', newline='') as file:
-            writer = csv.writer(file)
-            correct, total = 0, 0
-            with torch.no_grad():
-                for images, labels in testloader:
-                    _, predicted = torch.max(net(images), 1)
-                    correct += (predicted == labels).sum().item()
-                    total += labels.size(0)
-
-            accuracy = 100 * correct / total
-            print(f'Accuracy of the network: {accuracy:.2f} %')
-            writer.writerow([a, accuracy])"""
