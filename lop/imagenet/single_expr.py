@@ -9,6 +9,7 @@ from lop.utils.miscellaneous import nll_accuracy as accuracy
 import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms as T
+import torch.nn.functional as F
 
 
 train_images_per_class = 600
@@ -58,6 +59,38 @@ def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
     plt.show()
 
 
+def get_activation(name):
+    def hook(model, input, output):
+        if name not in activations:
+            activations[name] = output.detach().clone()
+        else:
+            # Concatenate activations across batches
+            activations[name] = torch.cat((activations[name], output.detach().clone()), dim=0)
+
+    return hook
+def count_dormant_neurons_per_layer(activations, threshold=1e-5):
+    """
+    Count the number of dormant neurons per layer based on activations.
+
+    Parameters:
+    - activations (dict): Dictionary of layer activations.
+    - threshold (float): Threshold below which a neuron is considered dormant.
+
+    Returns:
+    - dormant_count (dict): Count of dormant neurons per layer.
+    """
+    dormant_count = 0
+    for layer_name, act in activations.items():
+        if "fc" in layer_name:
+            # Calculate average activations across the batch dimension
+            avg_activation = torch.mean(act, dim=0)
+            # Count neurons with average activation below the threshold
+            dormant_neurons = torch.sum(avg_activation < 500).item()
+            dormant_count += dormant_neurons
+    print(dormant_count)
+    return dormant_count
+
+
 def load_imagenet(classes=[]):
     x_train, y_train, x_test, y_test = [], [], [], []
     for idx, _class in enumerate(classes):
@@ -80,12 +113,12 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 2000
+    num_tasks = 2
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
     data_file = "output.pkl"
-    num_epochs = 250
+    num_epochs = 2
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -96,7 +129,8 @@ if __name__ == '__main__':
     examples_per_epoch = train_images_per_class * 2
 
     # Initialize network
-    net = ConvNet() #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
+    net = ConvNet()
+    #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
     learner = Backprop(
@@ -119,12 +153,11 @@ if __name__ == '__main__':
     # Initialize accuracy tracking
     train_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
     test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
-
+    dormant_neurons = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
     # Training loop
     for task_idx in range(num_tasks):
         print("Task : " + str(task_idx))
         x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
-        print(class_order[task_idx * 2:(task_idx + 1) * 2])
         x_train, x_test = x_train.float(), x_test.float()
         #x_train, x_test = x_train.flatten(1), x_test.flatten(1) for linear network
 
@@ -138,7 +171,6 @@ if __name__ == '__main__':
         for epoch_idx in range(num_epochs): #tqdm
             example_order = np.random.permutation(examples_per_epoch)
             x_train, y_train = x_train[example_order], y_train[example_order]
-
             new_train_accuracies = torch.zeros(examples_per_epoch // mini_batch_size, dtype=torch.float)
 
             for i, start_idx in enumerate(range(0, examples_per_epoch, mini_batch_size)):
@@ -150,25 +182,32 @@ if __name__ == '__main__':
             train_accuracies[task_idx][epoch_idx] = new_train_accuracies.mean()
             new_test_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
 
-            # Testing loop
-            for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
-                test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
-                test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+        # Test loop with neuron activation recording
+        activations = {}
+        # Register hooks to capture activations for all layers
+        hooks = []
+        for name, layer in net.named_modules():
+            if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)):
+                hooks.append(layer.register_forward_hook(get_activation(name)))
 
-                network_output, _ = net.predict(x=test_batch_x)
-                new_test_accuracies[i] = accuracy(softmax(network_output, dim=1), test_batch_y)
+        # Running test batches
+        for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+            test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+            test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+            network_output, _ = net.predict(x=test_batch_x)
+            new_test_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
 
-            test_accuracies[task_idx][epoch_idx] = new_test_accuracies.mean()
-            #print(f'Accuracy for task {task_idx}, epoch {epoch_idx}: 'f'Train={train_accuracies[task_idx][epoch_idx]:.4f}, 'f'Test={test_accuracies[task_idx][epoch_idx]:.4f}')
+        test_accuracies[task_idx][epoch_idx] = new_test_accuracies.mean()
+        # Count dormant neurons
+        dormant_neurons[task_idx][epoch_idx] = count_dormant_neurons_per_layer(activations)
+        # Remove hooks after counting
+        for hook in hooks:
+            hook.remove()
 
-        if (task_idx + 1) % max(1, num_tasks // 10) == 0:
-            save_data({
-                'train_accuracies': train_accuracies.cpu(),
-                'test_accuracies': test_accuracies.cpu()
-            }, data_file)
 
     # Final save
     save_data({
+        'dormant neurons': dormant_neurons.cpu(),
         'train_accuracies': train_accuracies.cpu(),
         'test_accuracies': test_accuracies.cpu()
     }, data_file)
