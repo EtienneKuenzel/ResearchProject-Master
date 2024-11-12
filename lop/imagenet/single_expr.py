@@ -83,7 +83,7 @@ if __name__ == '__main__':
     num_tasks = 2000
     use_gpu = 1
     mini_batch_size = 100
-    run_idx = 0
+    run_idx = 3
     data_file = "output.pkl"
     num_epochs = 250
 
@@ -116,8 +116,6 @@ if __name__ == '__main__':
 
     class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
 
-    save_after_every_n_tasks = max(1, num_tasks // 10)
-
     # Initialize accuracy tracking
     train_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
     test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
@@ -126,19 +124,18 @@ if __name__ == '__main__':
     for task_idx in range(num_tasks):
         print("Task : " + str(task_idx))
         x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
+        print(class_order[task_idx * 2:(task_idx + 1) * 2])
         x_train, x_test = x_train.float(), x_test.float()
         #x_train, x_test = x_train.flatten(1), x_test.flatten(1) for linear network
 
-        if use_gpu:
-            x_train, y_train = x_train.to(dev), y_train.to(dev)
-            x_test, y_test = x_test.to(dev), y_test.to(dev)
-
+        x_train, y_train = x_train.to(dev), y_train.to(dev)
+        x_test, y_test = x_test.to(dev), y_test.to(dev)
 
         net.layers[-1].weight.data.zero_()
         net.layers[-1].bias.data.zero_()
 
         # Epoch loop
-        for epoch_idx in tqdm(range(num_epochs)):
+        for epoch_idx in range(num_epochs): #tqdm
             example_order = np.random.permutation(examples_per_epoch)
             x_train, y_train = x_train[example_order], y_train[example_order]
 
@@ -164,7 +161,7 @@ if __name__ == '__main__':
             test_accuracies[task_idx][epoch_idx] = new_test_accuracies.mean()
             #print(f'Accuracy for task {task_idx}, epoch {epoch_idx}: 'f'Train={train_accuracies[task_idx][epoch_idx]:.4f}, 'f'Test={test_accuracies[task_idx][epoch_idx]:.4f}')
 
-        if (task_idx + 1) % save_after_every_n_tasks == 0:
+        if (task_idx + 1) % max(1, num_tasks // 10) == 0:
             save_data({
                 'train_accuracies': train_accuracies.cpu(),
                 'test_accuracies': test_accuracies.cpu()
