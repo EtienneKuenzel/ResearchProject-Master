@@ -2,7 +2,7 @@ import torch
 import pickle
 from tqdm import tqdm
 from lop.algos.bp import Backprop
-from lop.nets.conv_net import ConvNet
+from lop.nets.conv_net import ConvNet_vanilla,ConvNet_PAU, ConvNet_TENT
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
 from lop.utils.miscellaneous import nll_accuracy as accuracy
@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torchvision.transforms as T
 import torch.nn.functional as F
+import torch.nn as nn
 
 
 train_images_per_class = 600
@@ -85,7 +86,7 @@ def count_dormant_neurons_per_layer(activations, threshold=1e-5):
             # Calculate average activations across the batch dimension
             avg_activation = torch.mean(act, dim=0)
             # Count neurons with average activation below the threshold
-            dormant_neurons = torch.sum(avg_activation < 500).item()
+            dormant_neurons = torch.sum(avg_activation < threshold).item()
             dormant_count += dormant_neurons
     print(dormant_count)
     return dormant_count
@@ -113,12 +114,15 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 2
+
+
+
+    num_tasks = 2000
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
-    data_file = "output.pkl"
-    num_epochs = 2
+    data_file = "outputtent.pkl"
+    num_epochs = 250
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -129,13 +133,15 @@ if __name__ == '__main__':
     examples_per_epoch = train_images_per_class * 2
 
     # Initialize network
-    net = ConvNet()
+    #net = ConvNet_vanilla()
+    #net =ConvNet_PAU()
+    net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
     learner = Backprop(
         net=net,
-        step_size=0.1,
+        step_size=0.01,
         opt="sgd",
         loss='nll',
         weight_decay=0,
