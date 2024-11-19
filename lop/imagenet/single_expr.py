@@ -113,12 +113,12 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 250
+    num_tasks = 2
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs = 250
+    num_epochs = 2
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -154,7 +154,7 @@ if __name__ == '__main__':
 
     # Initialize accuracy tracking
     test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
-    dormant_neurons = torch.zeros(num_tasks, num_epochs, 6)
+    dormant_neurons = torch.zeros(num_tasks, 17)
     # Training loop
     start_time = time.time()
     for task_idx in range(num_tasks):
@@ -199,7 +199,7 @@ if __name__ == '__main__':
         test_accuracies[task_idx] = new_test_accuracies.mean()
 
         # Count dormant neurons
-        for t_idx, threshold in enumerate([1e-5, 1e-4, 1e-3, 1e-2, 1e-1, 1e0, 1e1,1e2,1e3]):
+        for t_idx, threshold in enumerate([1e-10 ,1e-9, 1e-8 , 1e-7 ,1e-6 ,1e-5, 1e-4, 1e-3, 0.01,0.05,0.1,0.5, 1,5,10,1e2,1e3]):
             dormant_neurons[task_idx][t_idx] = count_dormant_neurons_per_layer(activations, threshold=threshold)
         # Remove hooks after counting
         for hook in hooks:
