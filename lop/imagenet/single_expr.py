@@ -18,45 +18,6 @@ test_images_per_class = 100
 images_per_class = train_images_per_class + test_images_per_class
 
 
-import pickle
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Load the data from outputRELU.pkl
-with open('outputRELU.pkl', 'rb') as file:
-    data = pickle.load(file)
-
-# Extract the dormant neurons data
-dormant_neurons = data['dormant neurons']  # Assuming dormant neurons is a dictionary
-thresholds = [1e-2, 1e-3, 1e-4, 1e-5, 1e-6, 1e-7]
-
-# Prepare to plot
-num_tasks = len(dormant_neurons)
-num_thresholds = len(thresholds)
-
-# Initialize arrays for plotting
-layers = list(dormant_neurons[0][0][0].keys())  # Assuming layers are keys in the dict
-layer_dormancy = {layer: [] for layer in layers}
-
-# Aggregate dormant neurons across tasks and epochs for each layer
-for t_idx in range(num_tasks):
-        for t_idx, threshold in enumerate(thresholds):
-            for layer, count in dormant_neurons[t_idx][249][t_idx].items():
-                layer_dormancy[layer].append(count)
-
-# Plot dormant neurons for each layer
-for layer, counts in layer_dormancy.items():
-    avg_counts = np.mean(np.array(counts).reshape(num_tasks, num_thresholds), axis=(0, 1))
-    plt.plot(thresholds, avg_counts, label=layer)
-
-plt.xscale('log')
-plt.xlabel('Threshold')
-plt.ylabel('Average Dormant Neurons')
-plt.title('Dormant Neurons per Layer vs Threshold')
-plt.legend()
-plt.grid(True)
-plt.show()
-
 # Function to display a batch of images
 def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
     """

@@ -12,3 +12,8 @@ share/
 *.pyc
 data/
 .DS_Store
+vcs.xml
+workspace.xml
+ResearchProject-Master.iml
+inspectionProfiles
+.name
