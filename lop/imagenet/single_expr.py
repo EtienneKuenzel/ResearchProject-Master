@@ -113,12 +113,12 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 2000
+    num_tasks = 110
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs = 250
+    num_epochs = 1
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -155,13 +155,16 @@ if __name__ == '__main__':
     # Initialize accuracy tracking
     test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
     dormant_neurons = torch.zeros(num_tasks, 4000)
+    historical_accuracies = torch.zeros(num_tasks, 100)
+    training_time = 0
     # Training loop
-    start_time = time.time()
+
     for task_idx in range(num_tasks):
+        start_time = time.time()
         print("Task : " + str(task_idx))
         x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
         x_train, x_test = x_train.float(), x_test.float()
-        #x_train, x_test = x_train.flatten(1), x_test.flatten(1) for linear network
+        # x_train, x_test = x_train.flatten(1), x_test.flatten(1) for linear network
 
         x_train, y_train = x_train.to(dev), y_train.to(dev)
         x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -170,7 +173,7 @@ if __name__ == '__main__':
         net.layers[-1].bias.data.zero_()
 
         # Epoch loop
-        for epoch_idx in range(num_epochs): #tqdm
+        for epoch_idx in range(num_epochs):  # tqdm
             example_order = np.random.permutation(examples_per_epoch)
             x_train, y_train = x_train[example_order], y_train[example_order]
 
@@ -179,26 +182,29 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
-
-        # Test loop with neuron activation recording
+        #timesafe
+        training_time += (time.time() - start_time)
+        # Test on the last 100 tasks------------------muss ich anpoassen
+        if task_idx > 0:
+            num_previous_tasks = min(task_idx, 100)
+            for t_idx, previous_task_idx in enumerate(range(max(0, task_idx - 99), task_idx + 1)):
+                x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
+                x_train, x_test = x_train.float(), x_test.float()
+                x_test, y_test = x_test.to(dev), y_test.to(dev)
+                prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
+                for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+                    test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+                    test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+                    network_output, _ = net.predict(x=test_batch_x)
+                    prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
+                historical_accuracies[task_idx][t_idx] = prev_accuracies.mean().item()
+                print(prev_accuracies.mean().item())
+        # Count dormant neurons
         activations = {}
-        # Register hooks to capture activations for all layers
         hooks = []
         for name, layer in net.named_modules():
             if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)):
                 hooks.append(layer.register_forward_hook(get_activation(name)))
-
-        # Running test batches
-        new_test_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
-        for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
-            test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
-            test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
-            network_output, _ = net.predict(x=test_batch_x)
-            new_test_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
-
-        test_accuracies[task_idx] = new_test_accuracies.mean()
-
-        # Count dormant neurons
         for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
             dormant_neurons[task_idx][t_idx] = count_dormant_neurons_per_layer(activations, threshold=threshold)
         # Remove hooks after counting
@@ -207,13 +213,12 @@ if __name__ == '__main__':
 
 
 
-    time_per_task = (time.time()-start_time)/num_tasks
+
     # Final save
     save_data({
-        'last100_accuracies' :1,
-        'time per task'  : time_per_task, #Training Time
+        'last100_accuracies' :historical_accuracies,
+        'time per task'  : training_time/num_tasks, #Training Time
         'dormant neurons': dormant_neurons.cpu(), #
-        'test_accuracies': test_accuracies.cpu() #Plastticity
     }, data_file)
 
 
