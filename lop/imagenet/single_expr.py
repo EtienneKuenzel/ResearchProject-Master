@@ -61,33 +61,24 @@ def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
 
 def get_activation(name):
     def hook(model, input, output):
+        # Store activations
         if name not in activations:
             activations[name] = output.detach().clone()
         else:
-            # Concatenate activations across batches
             activations[name] = torch.cat((activations[name], output.detach().clone()), dim=0)
 
+        # Store inputs to activations
+        if name not in inputs_to_activations:
+            inputs_to_activations[name] = input[0].detach().clone()  # input is a tuple
+        else:
+            inputs_to_activations[name] = torch.cat((inputs_to_activations[name], input[0].detach().clone()), dim=0)
     return hook
-def count_dormant_neurons_per_layer(activations, threshold):
-    """
-    Count the number of dormant neurons per layer based on activations.
 
-    Parameters:
-    - activations (dict): Dictionary of layer activations.
-    - threshold (float): Threshold below which a neuron is considered dormant.
-
-    Returns:
-    - dormant_count (dict): Count of dormant neurons per layer.
-    """
+def average_activation_input(activations, threshold, model):#Important gives out the average input into the activation functions
     dormant_count = 0
     for layer_name, act in activations.items():
         if "fc" in layer_name:
-            # Calculate average activations across the batch dimension
-            avg_activation = torch.mean(act, dim=0)
-            # Count neurons with average activation below the threshold
-            dormant_neurons = torch.sum(avg_activation < threshold).item()
-            dormant_count += dormant_neurons
-    #print(str(threshold) + "     " + str(dormant_count))
+            dormant_count += torch.sum(torch.mean(act, dim=0) < threshold).item()
     return dormant_count
 
 
@@ -113,12 +104,12 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 110
+    num_tasks = 2000
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs = 1
+    num_epochs =  250
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -157,8 +148,13 @@ if __name__ == '__main__':
     dormant_neurons = torch.zeros(num_tasks, 4000)
     historical_accuracies = torch.zeros(num_tasks, 100)
     training_time = 0
-    # Training loop
+    input_distribution = torch.zeros(num_tasks, 3,3,100)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
+    weight_layer = torch.zeros((num_tasks, 2, 128))
+    bias_layer = torch.zeros(num_tasks, 2)
 
+
+
+    # Training loop
     for task_idx in range(num_tasks):
         start_time = time.time()
         print("Task : " + str(task_idx))
@@ -169,8 +165,7 @@ if __name__ == '__main__':
         x_train, y_train = x_train.to(dev), y_train.to(dev)
         x_test, y_test = x_test.to(dev), y_test.to(dev)
 
-        net.layers[-1].weight.data.zero_()
-        net.layers[-1].bias.data.zero_()
+
 
         # Epoch loop
         for epoch_idx in range(num_epochs):  # tqdm
@@ -182,43 +177,60 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
+        weight_layer[task_idx] = net.layers[-1].weight.data
+        bias_layer[task_idx] = net.layers[-1].bias.data
         #timesafe
         training_time += (time.time() - start_time)
-        # Test on the last 100 tasks------------------muss ich anpoassen
-        if task_idx > 0:
-            num_previous_tasks = min(task_idx, 100)
-            for t_idx, previous_task_idx in enumerate(range(max(0, task_idx - 99), task_idx + 1)):
-                x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
-                x_train, x_test = x_train.float(), x_test.float()
-                x_test, y_test = x_test.to(dev), y_test.to(dev)
-                prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
-                for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
-                    test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
-                    test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
-                    network_output, _ = net.predict(x=test_batch_x)
-                    prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
-                historical_accuracies[task_idx][t_idx] = prev_accuracies.mean().item()
-                print(prev_accuracies.mean().item())
-        # Count dormant neurons
+
         activations = {}
+        inputs_to_activations = {}
+
         hooks = []
         for name, layer in net.named_modules():
             if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)):
                 hooks.append(layer.register_forward_hook(get_activation(name)))
+
+        #Eval 100 tasks(also the eval of current task) fehlt noch die heads die man speichert
+        for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
+            net.layers[-1].weight.data = weight_layer[previous_task_idx]
+            net.layers[-1].bias.data = bias_layer[previous_task_idx]
+            x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
+            x_train, x_test = x_train.float(), x_test.float()
+            x_test, y_test = x_test.to(dev), y_test.to(dev)
+            prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
+            for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+                test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+                test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+                network_output, _ = net.predict(x=test_batch_x)
+                prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
+            historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
+        #Input Distribution
+        for i, start_idx in enumerate(range(0, 99, 1)):
+            test_batch_x = x_test[start_idx:start_idx + 1]
+            test_batch_y = y_test[start_idx:start_idx + 1]
+            network_output, _ = net.predict(x=test_batch_x)
+
+            # Process stored inputs to activation functions
+            for layer_idx, (layer_name, input_data) in enumerate(inputs_to_activations.items()):
+                if "fc" in layer_name:
+                    input_distribution[task_idx][int(layer_name[-1])-1][0][i] = input_data.mean().item()
+
+        # Count dormant neurons
         for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
-            dormant_neurons[task_idx][t_idx] = count_dormant_neurons_per_layer(activations, threshold=threshold)
+            dormant_neurons[task_idx][t_idx] = average_activation_input(activations, threshold=threshold, model=net)
         # Remove hooks after counting
         for hook in hooks:
             hook.remove()
-
-
-
+        #head reset for new task
+        net.layers[-1].weight.data.zero_()
+        net.layers[-1].bias.data.zero_()
 
     # Final save
     save_data({
         'last100_accuracies' :historical_accuracies,
         'time per task'  : training_time/num_tasks, #Training Time
-        'dormant neurons': dormant_neurons.cpu(), #
+        'average_activation_input': dormant_neurons.cpu(),
+        'input_distribution': input_distribution.cpu(),
     }, data_file)
 
 
