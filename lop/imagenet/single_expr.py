@@ -74,10 +74,11 @@ def get_activation(name):
             inputs_to_activations[name] = torch.cat((inputs_to_activations[name], input[0].detach().clone()), dim=0)
     return hook
 
-def average_activation_input(activations, threshold, model):#Important gives out the average input into the activation functions
+def average_activation_input(activations, threshold, model, layer):#Important gives out the average input into the activation functions
     dormant_count = 0
+    activation_inputs = []
     for layer_name, act in activations.items():
-        if "fc" in layer_name:
+        if layer in layer_name:
             dormant_count += torch.sum(torch.mean(act, dim=0) < threshold).item()
     return dormant_count
 
@@ -109,7 +110,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs =  250
+    num_epochs =  2
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -145,10 +146,9 @@ if __name__ == '__main__':
 
     # Initialize accuracy tracking
     test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
-    dormant_neurons = torch.zeros(num_tasks, 4000)
+    task_activations = torch.zeros(num_tasks,3,3, 4000)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
     historical_accuracies = torch.zeros(num_tasks, 100)
     training_time = 0
-    input_distribution = torch.zeros(num_tasks, 3,3,100)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
     weight_layer = torch.zeros((num_tasks, 2, 128))
     bias_layer = torch.zeros(num_tasks, 2)
 
@@ -182,14 +182,6 @@ if __name__ == '__main__':
         #timesafe
         training_time += (time.time() - start_time)
 
-        activations = {}
-        inputs_to_activations = {}
-
-        hooks = []
-        for name, layer in net.named_modules():
-            if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)):
-                hooks.append(layer.register_forward_hook(get_activation(name)))
-
         #Eval 100 tasks(also the eval of current task) fehlt noch die heads die man speichert
         for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
             net.layers[-1].weight.data = weight_layer[previous_task_idx]
@@ -204,33 +196,51 @@ if __name__ == '__main__':
                 network_output, _ = net.predict(x=test_batch_x)
                 prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
             historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-        #Input Distribution
-        for i, start_idx in enumerate(range(0, 99, 1)):
-            test_batch_x = x_test[start_idx:start_idx + 1]
-            test_batch_y = y_test[start_idx:start_idx + 1]
+        a = net.layers[-1].bias.data
+        # Current Task Activations
+        activations = {}
+        inputs_to_activations = {}
+        hooks = []
+        for name, layer in net.named_modules():
+            if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)): hooks.append(layer.register_forward_hook(get_activation(name)))
+        x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
+        x_train, x_test = x_train.float(), x_test.float()
+        x_test, y_test = x_test.to(dev), y_test.to(dev)
+        for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+            test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+            test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
             network_output, _ = net.predict(x=test_batch_x)
-
-            # Process stored inputs to activation functions
-            for layer_idx, (layer_name, input_data) in enumerate(inputs_to_activations.items()):
-                if "fc" in layer_name:
-                    input_distribution[task_idx][int(layer_name[-1])-1][0][i] = input_data.mean().item()
-
-        # Count dormant neurons
         for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
-            dormant_neurons[task_idx][t_idx] = average_activation_input(activations, threshold=threshold, model=net)
-        # Remove hooks after counting
-        for hook in hooks:
-            hook.remove()
+            for layer in ["fc1", "fc2", "fc3"]:
+                task_activations[task_idx][0][int(layer[-1])-1][t_idx] = average_activation_input(activations, threshold=threshold, model=net, layer=layer)
+        for hook in hooks: hook.remove()
+        print(activations)
+        # OOD(Next Task)
+        activations = {}
+        inputs_to_activations = {}
+        hooks = []
+        print(activations)
+        for name, layer in net.named_modules():
+            if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)): hooks.append(layer.register_forward_hook(get_activation(name)))
+        x_train, y_train, x_test, y_test = load_imagenet(class_order[(task_idx+1) * 2:(task_idx +1 + 1) * 2])
+        x_train, x_test = x_train.float(), x_test.float()
+        x_test, y_test = x_test.to(dev), y_test.to(dev)
+        for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+            test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+            test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+            network_output, _ = net.predict(x=test_batch_x)
+        for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
+            for layer in ["fc1", "fc2", "fc3"]:
+                task_activations[task_idx][1][int(layer[-1])-1][t_idx] = average_activation_input(activations, threshold=threshold, model=net, layer=layer)
+        for hook in hooks: hook.remove()
         #head reset for new task
         net.layers[-1].weight.data.zero_()
         net.layers[-1].bias.data.zero_()
-
     # Final save
     save_data({
-        'last100_accuracies' :historical_accuracies,
+        'last100_accuracies' :historical_accuracies.cpu(),
         'time per task'  : training_time/num_tasks, #Training Time
-        'average_activation_input': dormant_neurons.cpu(),
-        'input_distribution': input_distribution.cpu(),
+        'task_activations': task_activations.cpu(),
     }, data_file)
 
 
