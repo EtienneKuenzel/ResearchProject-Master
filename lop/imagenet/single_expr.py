@@ -74,13 +74,32 @@ def get_activation(name):
             inputs_to_activations[name] = torch.cat((inputs_to_activations[name], input[0].detach().clone()), dim=0)
     return hook
 
-def average_activation_input(activations, threshold, model, layer):#Important gives out the average input into the activation functions
-    dormant_count = 0
+
+import torch
+
+
+def average_activation_input(activations, layer):
+    # Initialize an empty list to store the raw input values for each neuron
     activation_inputs = []
+
+    # Iterate through the activations dictionary
     for layer_name, act in activations.items():
+        # Check if the current layer matches the given layer name
         if layer in layer_name:
-            dormant_count += torch.sum(torch.mean(act, dim=0) < threshold).item()
-    return dormant_count
+            # If the activations are passed through a layer, we assume the raw input values
+            # are the activations before applying the activation function
+            # We need to access the raw values for the layer before activation
+
+            # Assuming `act` contains the values passed to the activation function,
+            # and you want the raw inputs to the activation (before activation function)
+            raw_input = act.detach()  # Detach to avoid tracking gradients (if needed)
+
+            # Store each input value (raw) into the list
+            for neuron_input in raw_input.permute(1, 0):  # Iterate over neurons (assuming N x M tensor)
+                activation_inputs.append(neuron_input.tolist())  # Append raw input values (as list)
+
+    # Return the list of raw inputs for the neurons
+    return activation_inputs
 
 
 def load_imagenet(classes=[]):
@@ -110,7 +129,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs =  2
+    num_epochs =  250
 
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -145,8 +164,7 @@ if __name__ == '__main__':
     class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
 
     # Initialize accuracy tracking
-    test_accuracies = torch.zeros((num_tasks, num_epochs), dtype=torch.float)
-    task_activations = torch.zeros(num_tasks,3,3, 4000)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
+    task_activations = torch.zeros(num_tasks,3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
     historical_accuracies = torch.zeros(num_tasks, 100)
     training_time = 0
     weight_layer = torch.zeros((num_tasks, 2, 128))
@@ -210,16 +228,15 @@ if __name__ == '__main__':
             test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
             test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
             network_output, _ = net.predict(x=test_batch_x)
-        for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
-            for layer in ["fc1", "fc2", "fc3"]:
-                task_activations[task_idx][0][int(layer[-1])-1][t_idx] = average_activation_input(activations, threshold=threshold, model=net, layer=layer)
+
+        for layer in ["fc1", "fc2"]:
+            # Assuming `average_activation_input(activations, layer=layer)` returns a list or numpy array
+            task_activations[task_idx][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
         for hook in hooks: hook.remove()
-        print(activations)
         # OOD(Next Task)
         activations = {}
         inputs_to_activations = {}
         hooks = []
-        print(activations)
         for name, layer in net.named_modules():
             if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)): hooks.append(layer.register_forward_hook(get_activation(name)))
         x_train, y_train, x_test, y_test = load_imagenet(class_order[(task_idx+1) * 2:(task_idx +1 + 1) * 2])
@@ -230,8 +247,8 @@ if __name__ == '__main__':
             test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
             network_output, _ = net.predict(x=test_batch_x)
         for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
-            for layer in ["fc1", "fc2", "fc3"]:
-                task_activations[task_idx][1][int(layer[-1])-1][t_idx] = average_activation_input(activations, threshold=threshold, model=net, layer=layer)
+            for layer in ["fc1", "fc2"]:
+                task_activations[task_idx][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
         for hook in hooks: hook.remove()
         #head reset for new task
         net.layers[-1].weight.data.zero_()
@@ -242,8 +259,4 @@ if __name__ == '__main__':
         'time per task'  : training_time/num_tasks, #Training Time
         'task_activations': task_activations.cpu(),
     }, data_file)
-
-
-
-
 
