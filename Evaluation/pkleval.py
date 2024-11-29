@@ -64,10 +64,31 @@ for image_file in image_files:
 
 
 # Extract activations
-activations = data['task_activations']  # Update the key if necessary
-# Convert to numpy if it's a PyTorch tensor
+activations = data['task_activations']
 if isinstance(activations, torch.Tensor):
-    activations = activations.numpy()
+    activations = activations.numpy() # torch.zeros(num_tasks,3,3,128, 200)
+
+
+# Assuming activations is already a NumPy array with shape (num_tasks, 3, 3, 128, 200)
+num_tasks = 50
+
+# Flatten the last two dimensions (128, 200) for each task
+flattened_activations = activations[:num_tasks, :, :, :, :].reshape(num_tasks, -1)
+
+# Combine all data into a single array for plotting
+all_values = flattened_activations.flatten()
+
+# Plot the density distribution
+plt.figure(figsize=(10, 6))
+sns.kdeplot(all_values, fill=True, color="blue", alpha=0.6)
+plt.title("Density Distribution of Activations")
+plt.xlabel("Activation Values")
+plt.ylabel("Density")
+plt.grid(True)
+plt.show()
+
+
+
 
 thresholds = np.arange(-20, 20, 0.01)
 
