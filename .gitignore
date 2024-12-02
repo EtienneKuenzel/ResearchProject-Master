@@ -17,3 +17,6 @@ workspace.xml
 ResearchProject-Master.iml
 inspectionProfiles
 .name
+workspace.xml
+vcs.xml
+misc.xml
