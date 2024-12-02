@@ -68,79 +68,17 @@ activations = data['task_activations']
 if isinstance(activations, torch.Tensor):
     activations = activations.numpy() # torch.zeros(num_tasks,3,3,128, 200)
 
-
-# Assuming activations is already a NumPy array with shape (num_tasks, 3, 3, 128, 200)
-num_tasks = 50
-
-# Flatten the last two dimensions (128, 200) for each task
-flattened_activations = activations[:num_tasks, :, :, :, :].reshape(num_tasks, -1)
-
-# Combine all data into a single array for plotting
-all_values = flattened_activations.flatten()
-
-# Plot the density distribution
 plt.figure(figsize=(10, 6))
-sns.kdeplot(all_values, fill=True, color="blue", alpha=0.6)
+
+
+for x in range(128):
+    flattened_activations = activations[1, 0, 0,x]
+    flattened_activations1 = activations[0, 1, 0,x]
+    sns.kdeplot(flattened_activations.flatten(),color="blue", alpha=1)
+    sns.kdeplot(flattened_activations1.flatten(), color="red", alpha=1)
+plt.xlim(-100,100)
 plt.title("Density Distribution of Activations")
 plt.xlabel("Activation Values")
 plt.ylabel("Density")
 plt.grid(True)
 plt.show()
-
-
-
-
-thresholds = np.arange(-20, 20, 0.01)
-
-# Total neurons count
-# Temporary folder to save frames
-output_folder = "frames"
-os.makedirs(output_folder, exist_ok=True)
-
-# Create frames for each task
-frame_paths = []
-for task_idx in range(0, 2001,10):  # Tasks 1 to 2000
-    # Prepare data for the current task
-    task_counts = []
-    task_counts1 = []
-    task_counts2 = []
-    for t_idx, threshold in enumerate(thresholds):
-        task_counts.append(activations[task_idx - 1][0][0][t_idx]/128)
-        task_counts1.append(activations[task_idx - 1][0][1][t_idx] / 128)
-        task_counts2.append(activations[task_idx - 1][0][2][t_idx] / 2)
-    #task_counts = gaussian_filter1d(np.gradient(task_counts, thresholds), sigma=20)
-    #task_counts1 = gaussian_filter1d(np.gradient(task_counts1, thresholds), sigma=20)
-    #task_counts2 = gaussian_filter1d(np.gradient(task_counts2, thresholds), sigma=20)
-    # Create the plot
-    plt.figure(figsize=(10, 7))
-
-    plt.plot(thresholds, task_counts, label=f'FC1 {task_idx}', linestyle='--')
-    plt.plot(thresholds, task_counts1, label=f'FC2 {task_idx}', linestyle='--')
-    plt.plot(thresholds, task_counts2, label=f'FC3 {task_idx}', linestyle='--')
-    plt.ylim(-0.05, 1.05)
-    plt.xlim(-20.05, 20.05)
-    plt.xlabel('Threshold')
-    plt.ylabel('Dormant Neurons')
-    plt.title(f'Dormant Neurons vs Threshold (Task {task_idx})')
-    plt.legend(title='Tasks')
-    plt.grid(True)
-
-    # Save the frame
-    frame_path = os.path.join(output_folder, f"frame_{task_idx:04d}.png")
-    plt.savefig(frame_path)
-    plt.close()
-    frame_paths.append(frame_path)
-
-
-# Create GIF from the saved frames
-gif_path = "dormant_neurons.gif"
-with imageio.get_writer(gif_path, mode='I', duration=0.1) as writer:
-    for frame_path in frame_paths:
-        writer.append_data(imageio.imread(frame_path))
-
-# Cleanup frames (optional)
-for frame_path in frame_paths:
-    os.remove(frame_path)
-
-print(f"GIF created at {gif_path}")
-
