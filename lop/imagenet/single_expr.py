@@ -126,7 +126,7 @@ if __name__ == '__main__':
     run_idx = 3
     data_file = "outputRELU.pkl"
     num_epochs =  2
-    eval_every_tasks = 50
+    eval_every_tasks = 100
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
     if use_gpu and torch.cuda.is_available():
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
 
     # Initialize accuracy tracking
-    task_activations = torch.zeros(num_tasks,3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
+    task_activations = torch.zeros(int(num_tasks/examples_per_epoch + 10),3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
     historical_accuracies = torch.zeros(num_tasks, 100)
     training_time = 0
     weight_layer = torch.zeros((num_tasks, 2, 128))
@@ -178,8 +178,6 @@ if __name__ == '__main__':
 
         x_train, y_train = x_train.to(dev), y_train.to(dev)
         x_test, y_test = x_test.to(dev), y_test.to(dev)
-
-
 
         # Epoch loop
         for epoch_idx in range(num_epochs):  # tqdm
@@ -210,15 +208,14 @@ if __name__ == '__main__':
                 network_output, _ = net.predict(x=test_batch_x)
                 prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
             historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-        a = net.layers[-1].bias.data
+
         if task_idx%eval_every_tasks ==0:
-            print(1)
             # Current Task Activations
             activations = {}
             inputs_to_activations = {}
             hooks = []
             for name, layer in net.named_modules():
-                if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)): hooks.append(layer.register_forward_hook(get_activation(name)))
+                if isinstance(layer, (torch.nn.Linear)): hooks.append(layer.register_forward_hook(get_activation(name)))
             x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
             x_train, x_test = x_train.float(), x_test.float()
             x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -228,15 +225,14 @@ if __name__ == '__main__':
                 network_output, _ = net.predict(x=test_batch_x)
 
             for layer in ["fc1", "fc2"]:
-                # Assuming `average_activation_input(activations, layer=layer)` returns a list or numpy array
-                task_activations[task_idx][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
+                task_activations[int(task_idx/examples_per_epoch)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
             # OOD(Next Task)
             activations = {}
             inputs_to_activations = {}
             hooks = []
             for name, layer in net.named_modules():
-                if isinstance(layer, (torch.nn.Linear, torch.nn.Conv2d)): hooks.append(layer.register_forward_hook(get_activation(name)))
+                if isinstance(layer, (torch.nn.Linear)): hooks.append(layer.register_forward_hook(get_activation(name)))
             x_train, y_train, x_test, y_test = load_imagenet(class_order[(task_idx+1) * 2:(task_idx +1 + 1) * 2])
             x_train, x_test = x_train.float(), x_test.float()
             x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -244,11 +240,10 @@ if __name__ == '__main__':
                 test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
                 test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
                 network_output, _ = net.predict(x=test_batch_x)
-            for t_idx, threshold in enumerate(np.arange(-20, 20, 0.01)):
-                for layer in ["fc1", "fc2"]:
-                    task_activations[task_idx][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
+            for layer in ["fc1", "fc2"]:
+                task_activations[int(task_idx/examples_per_epoch)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
-            #head reset for new task
+        #head reset for new task
         net.layers[-1].weight.data.zero_()
         net.layers[-1].bias.data.zero_()
     # Final save
