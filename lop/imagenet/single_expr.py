@@ -125,7 +125,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs =  2
+    num_epochs =  250
     eval_every_tasks = 100
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
 
     # Initialize accuracy tracking
-    task_activations = torch.zeros(int(num_tasks/examples_per_epoch + 10),3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
+    task_activations = torch.zeros(int(num_tasks/eval_every_tasks),3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
     historical_accuracies = torch.zeros(num_tasks, 100)
     training_time = 0
     weight_layer = torch.zeros((num_tasks, 2, 128))
@@ -225,7 +225,7 @@ if __name__ == '__main__':
                 network_output, _ = net.predict(x=test_batch_x)
 
             for layer in ["fc1", "fc2"]:
-                task_activations[int(task_idx/examples_per_epoch)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
+                task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
             # OOD(Next Task)
             activations = {}
@@ -241,7 +241,7 @@ if __name__ == '__main__':
                 test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
                 network_output, _ = net.predict(x=test_batch_x)
             for layer in ["fc1", "fc2"]:
-                task_activations[int(task_idx/examples_per_epoch)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
+                task_activations[int(task_idx/eval_every_tasks)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
         #head reset for new task
         net.layers[-1].weight.data.zero_()
