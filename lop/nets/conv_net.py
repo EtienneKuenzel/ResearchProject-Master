@@ -4,11 +4,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple, Union, Optional, Any
 import torch.utils.checkpoint as checkpoint
-
-class ConvNet_vanilla(nn.Module):
-    def __init__(self, num_classes=2):
+class ConvNet(nn.Module):
+    def __init__(self, num_classes=2, activation="relu"):
         """
-        Convolutional Neural Network with 3 convolutional layers followed by 3 fully connected layers
+        Flexible Convolutional Neural Network with configurable activation functions.
+        Supports both ReLU and PAU activations.
         """
         super().__init__()
         self.conv1 = nn.Conv2d(3, 32, 5)
@@ -21,21 +21,26 @@ class ConvNet_vanilla(nn.Module):
         self.fc3 = nn.Linear(128, num_classes)
         self.pool = nn.MaxPool2d(2, 2)
 
-        # architecture
-        self.layers = nn.ModuleList()
-        self.layers.append(self.conv1)
-        self.layers.append(nn.ReLU())
-        self.layers.append(self.conv2)
-        self.layers.append(nn.ReLU())
-        self.layers.append(self.conv3)
-        self.layers.append(nn.ReLU())
-        self.layers.append(self.fc1)
-        self.layers.append(nn.ReLU())
-        self.layers.append(self.fc2)
-        self.layers.append(nn.ReLU())
-        self.layers.append(self.fc3)
+        # Determine activation function
+        if activation.lower() == "relu":
+            self.act_fn = nn.ReLU
+        elif activation.lower() == "sig":
+            self.act_fn = nn.Sigmoid
+        elif activation.lower() == "tanh":
+            self.act_fn = nn.Tanh
+        elif activation.lower() == "leakrelu":
+            self.act_fn = nn.LeakyReLU
+        # Architecture
+        self.layers = nn.ModuleList([
+            self.conv1, self.act_fn(),
+            self.conv2, self.act_fn(),
+            self.conv3, self.act_fn(),
+            self.fc1, self.act_fn(),
+            self.fc2, self.act_fn(),
+            self.fc3
+        ])
 
-        self.act_type = 'relu'
+        self.act_type = activation.lower()
 
     def predict(self, x):
         x1 = self.pool(self.layers[1](self.layers[0](x)))
@@ -46,6 +51,7 @@ class ConvNet_vanilla(nn.Module):
         x5 = self.layers[9](self.layers[8](x4))
         x6 = self.layers[10](x5)
         return x6, [x1, x2, x3, x4, x5]
+
 
 class ConvNet_PAU(nn.Module):
     def __init__(self, num_classes=2):

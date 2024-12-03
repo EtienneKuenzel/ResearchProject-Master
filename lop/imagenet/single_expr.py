@@ -2,7 +2,7 @@ import torch
 import pickle
 from tqdm import tqdm
 from lop.algos.bp import Backprop
-from lop.nets.conv_net import ConvNet_vanilla,ConvNet_PAU, ConvNet_TENT
+from lop.nets.conv_net import ConvNet_PAU, ConvNet_TENT, ConvNet
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
 from lop.utils.miscellaneous import nll_accuracy as accuracy
@@ -136,7 +136,7 @@ if __name__ == '__main__':
     examples_per_epoch = train_images_per_class * 2
 
     # Initialize network
-    net = ConvNet_vanilla()
+    net = ConvNet(activation="leakrelu")
     #net =ConvNet_PAU()
     #net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
