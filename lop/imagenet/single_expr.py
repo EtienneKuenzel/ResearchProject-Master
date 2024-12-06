@@ -1,7 +1,7 @@
 import torch
 import pickle
 from tqdm import tqdm
-from lop.algos.bp import Backprop
+from lop.algos.bp import Backprop, DQN_EWC_Policy
 from lop.nets.conv_net import ConvNet_PAU, ConvNet_TENT, ConvNet
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
@@ -125,7 +125,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputRELU.pkl"
-    num_epochs =  250
+    num_epochs =  2
     eval_every_tasks = 100
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -142,7 +142,7 @@ if __name__ == '__main__':
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
-    learner = Backprop(
+    learner = DQN_EWC_Policy(
         net=net,
         step_size=0.01,
         opt="sgd",
@@ -209,6 +209,7 @@ if __name__ == '__main__':
                 prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
             historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
 
+
         if task_idx%eval_every_tasks ==0:
             # Current Task Activations
             activations = {}
@@ -244,6 +245,8 @@ if __name__ == '__main__':
                 task_activations[int(task_idx/eval_every_tasks)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
         #head reset for new task
+        learner.compute_fisher_matrix(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]), dev=dev)
+        learner.update_ewc_loss()
         net.layers[-1].weight.data.zero_()
         net.layers[-1].bias.data.zero_()
     # Final save
