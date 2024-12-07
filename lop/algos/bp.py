@@ -112,13 +112,14 @@ class DQN_EWC_Policy(object):
     def update_ewc_loss(self):
         """Update the EWC loss by accumulating penalties for all tasks."""
         for task_idx, fisher_matrix in enumerate(self.fisher_matrices):
-            prev_params = self.prev_params_list[task_idx]
-            for name, param in self.net.named_parameters():
-                #print(name) ändern um nur bestimmt layer zu locken
-                if param.requires_grad and name in fisher_matrix:
-                    fisher = fisher_matrix[name]
-                    prev_param = prev_params[name]
-                    self.ewc_penalty += (fisher * (param - prev_param) ** 2).sum()
+            pass
+        prev_params = self.prev_params_list[task_idx]
+        for name, param in self.net.named_parameters():
+            #print(name)
+            if param.requires_grad and name in fisher_matrix:
+                fisher = fisher_matrix[name]
+                prev_param = prev_params[name]
+                self.ewc_penalty += (fisher * (param - prev_param) ** 2).sum()
 
     def learn(self, x, target):
         """

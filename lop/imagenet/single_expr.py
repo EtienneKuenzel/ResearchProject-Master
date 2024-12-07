@@ -189,6 +189,8 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
+        learner.compute_fisher_matrix(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]), dev=dev)
+        learner.update_ewc_loss()
         weight_layer[task_idx] = net.layers[-1].weight.data
         bias_layer[task_idx] = net.layers[-1].bias.data
         #timesafe
@@ -245,8 +247,7 @@ if __name__ == '__main__':
                 task_activations[int(task_idx/eval_every_tasks)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
         #head reset for new task
-        learner.compute_fisher_matrix(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]), dev=dev)
-        learner.update_ewc_loss()
+
         net.layers[-1].weight.data.zero_()
         net.layers[-1].bias.data.zero_()
     # Final save
