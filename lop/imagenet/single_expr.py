@@ -124,9 +124,9 @@ if __name__ == '__main__':
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
-    data_file = "outputRELU.pkl"
-    num_epochs =  2
-    eval_every_tasks = 100
+    data_file = "outputRELU+biasnorm.pkl"
+    num_epochs =  250
+    eval_every_tasks = 1
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
     if use_gpu and torch.cuda.is_available():
@@ -136,13 +136,13 @@ if __name__ == '__main__':
     examples_per_epoch = train_images_per_class * 2
 
     # Initialize network
-    net = ConvNet(activation="leakrelu")
+    net = ConvNet(activation="relu")
     #net =ConvNet_PAU()
     #net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
-    learner = DQN_EWC_Policy(
+    learner = Backprop(
         net=net,
         step_size=0.01,
         opt="sgd",
@@ -189,7 +189,7 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
-        learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]),dev=dev)
+        #learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]),dev=dev) #for ewc
         weight_layer[task_idx] = net.layers[-1].weight.data
         bias_layer[task_idx] = net.layers[-1].bias.data
         #timesafe
@@ -228,6 +228,9 @@ if __name__ == '__main__':
 
             for layer in ["fc1", "fc2"]:
                 task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
+            for x in range(128):
+                net.layers[-3].bias.data[x] -= task_activations[int(task_idx/eval_every_tasks)][0][1][x].mean()
+                net.layers[-5].bias.data[x] -= task_activations[int(task_idx/eval_every_tasks)][0][0][x].mean()
             for hook in hooks: hook.remove()
             # OOD(Next Task)
             activations = {}
