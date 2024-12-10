@@ -174,6 +174,8 @@ class PAU(nn.Module):
         weights_nominator, weights_denominator = self.initial_weights
         self.weights_nominator: Union[nn.Parameter, torch.Tensor] = nn.Parameter(weights_nominator.view(1, -1))
         self.weights_denominator: Union[nn.Parameter, torch.Tensor] = nn.Parameter(weights_denominator.view(1, -1))
+        if False:
+            self.freeze()
 
     def freeze(self) -> None:
         """
