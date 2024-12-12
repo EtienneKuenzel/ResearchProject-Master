@@ -1,6 +1,5 @@
 import torch.nn as nn
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Tuple, Union, Optional, Any
 import torch.utils.checkpoint as checkpoint
@@ -30,6 +29,12 @@ class ConvNet(nn.Module):
             self.act_fn = nn.Tanh
         elif activation.lower() == "leakrelu":
             self.act_fn = nn.LeakyReLU
+        elif activation.lower() == "cube":
+            self.act_fn = CubeActivation
+        elif activation.lower() == "squared":
+            self.act_fn = SquaredActivation
+        elif activation.lower() == "sinlin":
+            self.act_fn = LinearSinusActivation
         # Architecture
         self.layers = nn.ModuleList([
             self.conv1, self.act_fn(),
@@ -135,7 +140,15 @@ class ConvNet_TENT(nn.Module):
         x5 = self.layers[9](self.layers[8](x4))
         x6 = self.layers[10](x5)
         return x6, [x1, x2, x3, x4, x5]
-
+class CubeActivation(nn.Module):
+    def forward(self, x):
+        return ((x+2) ** 3)/50
+class LinearSinusActivation(nn.Module):
+    def forward(self, x):
+        return 0.75 * x - torch.sin(x)
+class SquaredActivation(nn.Module):
+    def forward(self, x):
+        return x ** 2
 class PAU(nn.Module):
     """
     This class implements the Pade Activation Unit proposed in:
