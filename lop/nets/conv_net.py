@@ -35,6 +35,8 @@ class ConvNet(nn.Module):
             self.act_fn = SquaredActivation
         elif activation.lower() == "sinlin":
             self.act_fn = LinearSinusActivation
+        elif activation.lower() == "test":
+            self.act_fn = TestRELU
         # Architecture
         self.layers = nn.ModuleList([
             self.conv1, self.act_fn(),
@@ -149,6 +151,13 @@ class LinearSinusActivation(nn.Module):
 class SquaredActivation(nn.Module):
     def forward(self, x):
         return x ** 2
+class SquaredActivation(nn.Module):
+    def forward(self, x):
+        return x ** 2
+class TestRELU(nn.Module):
+    def forward(self, x):
+        # Apply the conditional logic using torch.where
+        return torch.where(x > -3, F.relu(x), -x - 3)
 class PAU(nn.Module):
     """
     This class implements the Pade Activation Unit proposed in:
