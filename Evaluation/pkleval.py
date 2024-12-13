@@ -13,10 +13,10 @@ file_paths = [
     'outputleakyRELU.pkl',
     'outputPAU.pkl',
     'outputtanh.pkl',
-    'outputPAUfreeze.pkl']
-labels = ['RELU', 'LeakyRELU', 'PAU', 'Tanh', 'PAU+freeze']
-colors = ['blue', 'red', 'green', 'purple', 'pink']
-
+    'outputPAUfreeze.pkl',
+    'outputtest.pkl']
+labels = ['RELU', 'LeakyRELU', 'PAU', 'Tanh', 'PAU+freeze', "RELU+u"]
+colors = ['blue', 'red', 'green', 'purple', 'pink', "brown", "grey"]
 
 data_list = []
 for file_path in file_paths:
