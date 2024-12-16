@@ -9,14 +9,20 @@ from scipy.ndimage import gaussian_filter1d
 
 # File paths
 file_paths = [
-    'outputRELU.pkl',
-    'outputleakyRELU.pkl',
-    'outputPAU.pkl',
-    'outputtanh.pkl',
-    'outputPAUfreeze.pkl',
-    'outputtest.pkl']
-labels = ['RELU', 'LeakyRELU', 'PAU', 'Tanh', 'PAU+freeze', "RELU+u"]
-colors = ['blue', 'red', 'green', 'purple', 'pink', "brown", "grey"]
+    #'outputRELU.pkl',
+    #'outputleakyRELU.pkl',
+    #'outputPAU.pkl',
+    #'outputtanh.pkl',
+    #'outputPAUfreeze.pkl',
+    #'outputRELU+up.pkl',
+    'outputRELU+down.pkl']
+labels = [
+          #'RELU',
+          #'LeakyRELU',
+          'PAU',
+          #'Tanh',
+          'PAU+freeze', "RELU+u", "RELU+d"]
+colors = ['blue', 'red', 'green', 'purple', 'pink', "brown", "grey", "orange"]
 
 data_list = []
 for file_path in file_paths:
@@ -54,7 +60,7 @@ os.makedirs(output_dir, exist_ok=True)
 image_files = []
 num_tasks = len(historical_accuracies[0])
 step = 50  # Interval for averaging
-
+"""
 for task_idx in range(0, num_tasks, step):
     avg_accuracies = [
         np.mean(accuracy[max(0, task_idx - step):min(num_tasks, task_idx + step)], axis=0)
@@ -84,21 +90,28 @@ with imageio.get_writer(gif_path, mode='I', duration=0.5) as writer:
     for image_file in image_files:
         writer.append_data(imageio.imread(image_file))
 
-
+"""
 frames = []
 num_activation_tasks = 20  # Number of datapoints(equal to task_number/eval_every_tasks in singly_expr.py)
 for i in range(num_activation_tasks):
     plt.figure(figsize=(10, 6))
     for activation, label, color in zip(activations, labels, colors):
-        sns.kdeplot(activation[i, 0, 0].flatten(), fill=True, color=color, alpha=0.2, label=label)
+        for x in range(128):
+            #sns.kdeplot(activation[i, 0, 0, x].flatten(), fill=True, alpha=0.2, label=label)
+            data = activation[i, 0, 0, x].flatten()
 
+            # Create colors based on the index of `data`
+            indices = np.arange(len(data))  # Indices (0, 1, ..., 199)
+            colors = indices  # Use indices for color mapping
+
+            plt.scatter([data.mean()] * len(data), data, c=colors, cmap='viridis', alpha=0.7, s=1)
     plt.title(f"Density Distribution of Activations (Task: {i * 2000/num_activation_tasks})")
     plt.xlabel("Activation Values")
     plt.ylabel("Density")
     plt.legend()
     plt.grid(True)
-    plt.xlim(-100, 100)
-    plt.ylim(0, 0.2)
+    plt.xlim(-8, 8)
+    plt.ylim(-10, 10)
 
     filename = f"frame_{i}.png"
     plt.savefig(filename)
