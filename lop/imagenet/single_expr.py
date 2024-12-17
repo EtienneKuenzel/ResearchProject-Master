@@ -12,10 +12,7 @@ import torchvision.transforms as T
 import torch.nn.functional as F
 import torch.nn as nn
 import time as time
-
-train_images_per_class = 600
-test_images_per_class = 100
-images_per_class = train_images_per_class + test_images_per_class
+import os
 
 
 # Function to display a batch of images
@@ -103,10 +100,10 @@ def load_imagenet(classes=[]):
     for idx, _class in enumerate(classes):
         data_file = 'data/classes/' + str(_class) + '.npy'
         new_x = np.load(data_file)
-        x_train.append(new_x[:train_images_per_class])
-        x_test.append(new_x[train_images_per_class:])
-        y_train.append(np.array([idx] * train_images_per_class))
-        y_test.append(np.array([idx] * test_images_per_class))
+        x_train.append(new_x[:600])
+        x_test.append(new_x[600:])
+        y_train.append(np.array([idx] * 600))
+        y_test.append(np.array([idx] * 100))
     x_train = torch.tensor(np.concatenate(x_train))
     y_train = torch.from_numpy(np.concatenate(y_train))
     x_test = torch.tensor(np.concatenate(x_test))
@@ -125,16 +122,15 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputtest.pkl"
-    num_epochs =  250
-    eval_every_tasks = 100
+    num_epochs =  2
+    eval_every_tasks = 10
+    save_folder = data_file + "model"
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
     if use_gpu and torch.cuda.is_available():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
-
-    # Constants
-    examples_per_epoch = train_images_per_class * 2
-
+    if not os.path.exists(save_folder):
+        os.makedirs(save_folder)
     # Initialize network
     net = ConvNet(activation="test")
     #net =ConvNet_PAU()
@@ -181,10 +177,10 @@ if __name__ == '__main__':
 
         # Epoch loop
         for epoch_idx in range(num_epochs):  # tqdm
-            example_order = np.random.permutation(examples_per_epoch)
+            example_order = np.random.permutation(1200)
             x_train, y_train = x_train[example_order], y_train[example_order]
 
-            for i, start_idx in enumerate(range(0, examples_per_epoch, mini_batch_size)):
+            for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                 batch_x = x_train[start_idx:start_idx + mini_batch_size]
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
@@ -212,6 +208,9 @@ if __name__ == '__main__':
 
 
         if task_idx%eval_every_tasks ==0:
+            # Example in PyTorch
+            torch.save(net.state_dict(), os.path.join(save_folder, f'model_weights_{task_idx}.pth'))
+
             # Current Task Activations
             activations = {}
             inputs_to_activations = {}
