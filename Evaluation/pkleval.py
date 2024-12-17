@@ -92,26 +92,30 @@ with imageio.get_writer(gif_path, mode='I', duration=0.5) as writer:
 
 """
 frames = []
+
 num_activation_tasks = 20  # Number of datapoints(equal to task_number/eval_every_tasks in singly_expr.py)
 for i in range(num_activation_tasks):
+
     plt.figure(figsize=(10, 6))
     for activation, label, color in zip(activations, labels, colors):
-        for x in range(128):
+        mean = []
+        std = []
+        for x in range(10):
             #sns.kdeplot(activation[i, 0, 0, x].flatten(), fill=True, alpha=0.2, label=label)
             data = activation[i, 0, 0, x].flatten()
-
+            mean.append(data.mean())
+            std.append(data.std())
             # Create colors based on the index of `data`
             indices = np.arange(len(data))  # Indices (0, 1, ..., 199)
             colors = indices  # Use indices for color mapping
+            plt.scatter(indices, data, cmap='viridis', alpha=0.7, s=4)
 
-            plt.scatter([data.mean()] * len(data), data, c=colors, cmap='viridis', alpha=0.7, s=1)
-    plt.title(f"Density Distribution of Activations (Task: {i * 2000/num_activation_tasks})")
-    plt.xlabel("Activation Values")
-    plt.ylabel("Density")
+    plt.xlabel("mean")
+    plt.ylabel("std")
     plt.legend()
     plt.grid(True)
-    plt.xlim(-8, 8)
-    plt.ylim(-10, 10)
+    #plt.xlim(-8, 8)
+    #plt.ylim(0, 10)
 
     filename = f"frame_{i}.png"
     plt.savefig(filename)
