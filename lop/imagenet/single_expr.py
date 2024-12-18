@@ -72,26 +72,12 @@ def get_activation(name):
     return hook
 
 def average_activation_input(activations, layer):
-    # Initialize an empty list to store the raw input values for each neuron
     activation_inputs = []
-
-    # Iterate through the activations dictionary
     for layer_name, act in activations.items():
-        # Check if the current layer matches the given layer name
         if layer in layer_name:
-            # If the activations are passed through a layer, we assume the raw input values
-            # are the activations before applying the activation function
-            # We need to access the raw values for the layer before activation
-
-            # Assuming `act` contains the values passed to the activation function,
-            # and you want the raw inputs to the activation (before activation function)
             raw_input = act.detach()  # Detach to avoid tracking gradients (if needed)
-
-            # Store each input value (raw) into the list
             for neuron_input in raw_input.permute(1, 0):  # Iterate over neurons (assuming N x M tensor)
                 activation_inputs.append(neuron_input.tolist())  # Append raw input values (as list)
-
-    # Return the list of raw inputs for the neurons
     return activation_inputs
 
 
@@ -176,7 +162,7 @@ if __name__ == '__main__':
         x_test, y_test = x_test.to(dev), y_test.to(dev)
 
         # Epoch loop
-        for epoch_idx in range(num_epochs):  # tqdm
+        for epoch_idx in range(num_epochs):
             example_order = np.random.permutation(1200)
             x_train, y_train = x_train[example_order], y_train[example_order]
 
