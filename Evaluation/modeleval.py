@@ -5,6 +5,11 @@ from lop.nets.conv_net import ConvNet
 import os
 import pickle
 import matplotlib.colors as mcolors
+import torch
+import matplotlib.pyplot as plt
+import seaborn as sns
+from PIL import Image
+import os
 
 # Get the current script's directory
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,9 +38,90 @@ def normalize(d):
     return [p / norm for p in d]
 dev ="cpu"
 
+# Use a fixed random seed
+
+
+
+"""# Set device
+dev = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+# Ensure the output directory exists
+output_dir = "density_frames"
+os.makedirs(output_dir, exist_ok=True)
+
+
+# Function to plot density
+def plot_density(weights_data, biases_data, task_idx, output_path):
+    plt.figure(figsize=(10, 6))
+
+    # Density plot for weights
+    sns.kdeplot(weights_data, fill=True, color="blue", alpha=0.6, label="Weights")
+
+    # Density plot for biases
+    sns.kdeplot(biases_data, fill=True, color="red", alpha=0.6, label="Biases")
+
+    plt.title(f"Density of Weights & Biases (Task {task_idx})")
+    plt.xlim(-3, 3)
+    plt.ylim(0, 4)
+    plt.xlabel("Value")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.grid(True)
+
+    plt.savefig(output_path)
+    plt.close()
+
+
+# Task indices
+task_indices = [0, 99, 199, 299, 399, 499, 599, 699, 799, 899, 999, 1099, 1199, 1299, 1399, 1499, 1599, 1699, 1799,
+                1899, 1999]
+
+# Generate density plots for each task
+frame_paths = []
+for task_idx in task_indices:
+    model = ConvNet(activation="relu")
+    model.load_state_dict(
+        torch.load(f'RELUmodelweights/model_weights_{task_idx}.pth', map_location=torch.device('cpu')))
+    model.to(dev)
+
+    # Collect weights and biases separately
+    weights_values = []
+    biases_values = []
+
+    for param in model.named_parameters():
+        values = param[1].cpu().detach().numpy().flatten()
+        if "fc" in param[0]:
+            if "bias" in param[0]:  # Bias values
+                print("a")
+                biases_values.extend(values)
+            else:  # Weight values
+                weights_values.extend(values)
+
+    # Plot density
+    output_path = os.path.join(output_dir, f"density_task_{task_idx}.png")
+    plot_density(weights_values, biases_values, task_idx, output_path)
+
+    frame_paths.append(output_path)
+
+# Create GIF
+frames = [Image.open(frame_path) for frame_path in frame_paths]
+gif_path = "weights_bias_density.gif"
+
+frames[0].save(
+    gif_path,
+    save_all=True,
+    append_images=frames[1:],
+    duration=500,  # Frame duration in milliseconds
+    loop=0  # Infinite loop
+)
+
+print(f"GIF created at: {gif_path}")"""
+torch.manual_seed(42)
+
+# Assign the same function to both
 random1 = torch.randn_like
 random2 = torch.randn_like
-for task_idx in [0,99,199,299,399,499,599,699,699,799,899,999,1099,1199,1299,1399,1499,1599,1699,1799,1899,1999]:
+for task_idx in [1599,1699,1799,1899,1999]:
     x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
     x_train, x_test = x_train.float(), x_test.float()
     x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -48,27 +134,32 @@ for task_idx in [0,99,199,299,399,499,599,699,699,799,899,999,1099,1199,1299,139
     loss_fn = torch.nn.CrossEntropyLoss()
 
     # Generate random directions
-    d1 = normalize([random1(p) for p in model.parameters()])
+    torch.manual_seed(42)  # Reset the random seed
+    d1 = normalize([random1(p) for p in model.parameters()]) #normalize
+
+    torch.manual_seed(93)  # Reset the random seed
     d2 = normalize([random2(p) for p in model.parameters()])
 
     # Define grid for alpha and beta
-    alphas = np.linspace(-50, 50, 50)  # Double the range
-    betas = np.linspace(-50, 50, 50)
+    alphas = np.linspace(-10000, 10000, 20)  # Double the range
+    betas = np.linspace(-10000, 10000, 20)
 
-    loss_values = np.zeros((50, 50))
+    loss_values = np.zeros((20, 20))
 
     original_params = [p.clone() for p in model.parameters()]
 
     # Define batch size for data processing
     mini_batch_size = 64
-
     # Compute loss landscape
     for i, alpha in enumerate(alphas):
         for j, beta in enumerate(betas):
-            # Perturb parameters
-            for p, orig_p, d1_p, d2_p in zip(model.parameters(), original_params, d1, d2):
-                p.data = orig_p + alpha * d1_p + beta * d2_p
-
+            for name, (p, orig_p, d1_p, d2_p) in zip(model.named_parameters(),zip(model.parameters(), original_params, d1, d2)):
+                if 'bias' in name[0] and 'fc' in name[0]:# or name[0].find('fc2')  or name[0].find('fc3') :
+                    p.data = orig_p + alpha * d1_p + beta * d2_p
+                    #print(name[0])
+                    #print(p.data)
+                    #print(orig_p)
+                    #print("-----")
             # Compute loss over mini-batches
             total_loss = 0.0
             total_samples = 0
