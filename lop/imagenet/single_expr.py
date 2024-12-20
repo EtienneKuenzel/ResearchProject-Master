@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torch.nn as nn
 import time as time
 import os
-
+import torch.nn.init as init
 
 # Function to display a batch of images
 def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
@@ -103,13 +103,13 @@ def save_data(data, data_file):
 
 
 if __name__ == '__main__':
-    num_tasks = 2000
+    num_tasks = 3
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputtest.pkl"
-    num_epochs =  2
-    eval_every_tasks = 10
+    num_epochs =  250
+    eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
     dev = torch.device("cuda:0") if use_gpu and torch.cuda.is_available() else torch.device("cpu")
@@ -118,7 +118,7 @@ if __name__ == '__main__':
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     # Initialize network
-    net = ConvNet(activation="test")
+    net = ConvNet(activation="RELU")
     #net =ConvNet_PAU()
     #net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
@@ -176,23 +176,7 @@ if __name__ == '__main__':
         bias_layer[task_idx] = net.layers[-1].bias.data
         #timesafe
         training_time += (time.time() - start_time)
-        print(time.time() - start_time)
         #Eval 100 tasks
-        for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
-            net.layers[-1].weight.data = weight_layer[previous_task_idx]
-            net.layers[-1].bias.data = bias_layer[previous_task_idx]
-            x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
-            x_train, x_test = x_train.float(), x_test.float()
-            x_test, y_test = x_test.to(dev), y_test.to(dev)
-            prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
-            for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
-                test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
-                test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
-                network_output, _ = net.predict(x=test_batch_x)
-                prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
-            historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-
-
         if task_idx%eval_every_tasks ==0:
             # Example in PyTorch
             torch.save(net.state_dict(), os.path.join(save_folder, f'model_weights_{task_idx}.pth'))
@@ -214,9 +198,45 @@ if __name__ == '__main__':
             for layer in ["fc1", "fc2"]:
                 task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             """ für biasnorm for x in range(128):
-                net.layers[-3].bias.data[x] -= task_activations[int(task_idx)][0][1][x].mean()
+                net.layers[-3].bias.data[x] -= task_activations[int(task_idx)][0][1][x].mean() vorletzter layer
                 net.layers[-5].bias.data[x] -= task_activations[int(task_idx)][0][0][x].mean()"""
             for hook in hooks: hook.remove()
+            for x in range(128):
+                for y in range(x+1,128):
+                    # Flatten and apply ReLU activation
+                    data_x = np.maximum(0,task_activations[task_idx, 0, 0, x].flatten())
+                    data_y = np.maximum(0,task_activations[task_idx, 0, 0, y].flatten())
+                    correlation = np.corrcoef(data_x, data_y)[0, 1]
+                    if correlation > 0.9:#Maybe austauschen zu top10% and correlations
+                        #merge neurons
+                        weights = [net.layers[-3].weight.data[neuron][x] for neuron in range(128)]
+                        print(weights)
+                        for neuron in range(128):
+                            net.layers[-3].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y])#* (torch.std(data_x) / torch.std(data_y)))
+                        #Reset values of consumed neuron
+                        weights = [net.layers[-3].weight.data[neuron][x] for neuron in range(128)]
+                        print(weights)
+                        init.normal_(net.layers[-5].bias.data[y], mean=0.0, std=0.01)
+                        init.normal_(net.layers[-5].weight.data[y], mean=0.0, std=0.01)
+
+        for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
+            net.layers[-1].weight.data = weight_layer[previous_task_idx]
+            net.layers[-1].bias.data = bias_layer[previous_task_idx]
+            x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
+            x_train, x_test = x_train.float(), x_test.float()
+            x_test, y_test = x_test.to(dev), y_test.to(dev)
+            prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
+            for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+                test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+                test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+                network_output, _ = net.predict(x=test_batch_x)
+                prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
+            print(prev_accuracies.mean().item())
+            historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
+
+
+
+
             # OOD(Next Task)
             activations = {}
             inputs_to_activations = {}

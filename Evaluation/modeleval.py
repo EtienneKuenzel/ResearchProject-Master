@@ -116,7 +116,7 @@ frames[0].save(
 )
 
 print(f"GIF created at: {gif_path}")"""
-torch.manual_seed(42)
+"""torch.manual_seed(42)
 
 # Assign the same function to both
 random1 = torch.randn_like
@@ -205,3 +205,4 @@ with imageio.get_writer('loss_landscape.gif', mode='I') as writer:
         filename = f'frame_{i}.png'
         image = imageio.imread(filename)
         writer.append_data(image)
+"""
