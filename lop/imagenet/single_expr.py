@@ -108,7 +108,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputtest.pkl"
-    num_epochs =  250
+    num_epochs =  2
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -201,23 +201,28 @@ if __name__ == '__main__':
                 net.layers[-3].bias.data[x] -= task_activations[int(task_idx)][0][1][x].mean() vorletzter layer
                 net.layers[-5].bias.data[x] -= task_activations[int(task_idx)][0][0][x].mean()"""
             for hook in hooks: hook.remove()
+            nlist = []
             for x in range(128):
+                if torch.std(np.maximum(0,task_activations[task_idx, 0, 0, x].flatten())) == 0:
+                    print("A")
+                    continue
                 for y in range(x+1,128):
+                    if x in nlist or y in nlist:
+                        continue
                     # Flatten and apply ReLU activation
                     data_x = np.maximum(0,task_activations[task_idx, 0, 0, x].flatten())
                     data_y = np.maximum(0,task_activations[task_idx, 0, 0, y].flatten())
                     correlation = np.corrcoef(data_x, data_y)[0, 1]
                     if correlation > 0.9:#Maybe austauschen zu top10% and correlations
                         #merge neurons
-                        weights = [net.layers[-3].weight.data[neuron][x] for neuron in range(128)]
-                        print(weights)
                         for neuron in range(128):
-                            net.layers[-3].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y])#* (torch.std(data_x) / torch.std(data_y)))
+                            net.layers[-3].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y]* (torch.std(data_x) / torch.std(data_y)))
                         #Reset values of consumed neuron
-                        weights = [net.layers[-3].weight.data[neuron][x] for neuron in range(128)]
-                        print(weights)
+                        nlist.append(y)
+                        nlist.append(x)
                         init.normal_(net.layers[-5].bias.data[y], mean=0.0, std=0.01)
                         init.normal_(net.layers[-5].weight.data[y], mean=0.0, std=0.01)
+                print(nlist)
 
         for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
             net.layers[-1].weight.data = weight_layer[previous_task_idx]
@@ -255,8 +260,8 @@ if __name__ == '__main__':
             for hook in hooks: hook.remove()
         #head reset for new task
 
-        net.layers[-1].weight.data.zero_()
-        net.layers[-1].bias.data.zero_()
+        #net.layers[-1].weight.data.zero_()
+        #net.layers[-1].bias.data.zero_()
     # Final save
     save_data({
         'last100_accuracies' :historical_accuracies.cpu(),

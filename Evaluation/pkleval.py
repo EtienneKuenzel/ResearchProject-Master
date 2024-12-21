@@ -15,9 +15,10 @@ file_paths = [
     #'outputtanh.pkl',
     #'outputPAUfreeze.pkl',
     #'outputRELU+up.pkl',
+    #'outputRELU+down.pkl',
     'outputRELU+down.pkl']
 labels = [
-          #'RELU',
+          'RELU',
           #'LeakyRELU',
           'PAU',
           #'Tanh',
@@ -92,36 +93,43 @@ with imageio.get_writer(gif_path, mode='I', duration=0.5) as writer:
 
 """
 frames = []
-
+def custom_activation(data):
+    # Apply the custom transformation
+    transformed_data = np.where(data < -3, 0, np.maximum(0, data))
+    return transformed_data
 num_activation_tasks = 20  # Number of datapoints(equal to task_number/eval_every_tasks in singly_expr.py)
 for i in range(num_activation_tasks):
-
-    plt.figure(figsize=(10, 6))
+    i=2
     for activation, label, color in zip(activations, labels, colors):
-        mean = []
-        std = []
-        for x in range(10):
-            #sns.kdeplot(activation[i, 0, 0, x].flatten(), fill=True, alpha=0.2, label=label)
-            data = activation[i, 0, 0, x].flatten()
-            mean.append(data.mean())
-            std.append(data.std())
-            # Create colors based on the index of `data`
-            indices = np.arange(len(data))  # Indices (0, 1, ..., 199)
-            colors = indices  # Use indices for color mapping
-            plt.scatter(indices, data, cmap='viridis', alpha=0.7, s=4)
+        #sns.kdeplot(activation[i, 0, 0].flatten(), fill=True, alpha=0.2, label=label)
+        #continue
+        correlation_matrix = np.zeros((128, 128))
 
-    plt.xlabel("mean")
-    plt.ylabel("std")
-    plt.legend()
-    plt.grid(True)
-    #plt.xlim(-8, 8)
-    #plt.ylim(0, 10)
+        for x in range(128):
+            for y in range(128):
+                # Flatten and apply ReLU activation
+                data_x = custom_activation(activation[i, 0, 0, x].flatten())
+                data_y = custom_activation(activation[i, 0, 0, y].flatten())
+                # Compute absolute correlation coefficient
+                # Check for constant data to avoid divide-by-zero
+                correlation = np.corrcoef(data_x, data_y)[0, 1]
+                if np.array_equal(data_x, data_y):
+                    print(data_x)
+                    print(data_y)
+                    correlation==1
+                correlation_matrix[x, y] = correlation
 
-    filename = f"frame_{i}.png"
-    plt.savefig(filename)
-    frames.append(filename)
-    plt.close()
 
+        # Plot the heatmap
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(correlation_matrix, cmap="viridis", annot=False, square=True, cbar=True)
+        plt.title(f"Heatmap of Neuron Correlations (Task {i + 1})")
+        plt.xlabel("Neuron Index")
+        plt.ylabel("Neuron Index")
+        filename = f"frame_{i}.png"
+        plt.savefig(filename)
+        frames.append(filename)
+        plt.clf()
 # Create a GIF for activations
 gif_activation_path = "activations.gif"
 with imageio.get_writer(gif_activation_path, mode="I", fps=1) as writer:

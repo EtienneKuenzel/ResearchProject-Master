@@ -38,7 +38,6 @@ class Backprop(object):
         self.opt.step()
         if self.loss == 'nll':
             return loss.detach(), output.detach()
-        return loss.detach()
 
 class DQN_EWC_Policy(object):
     def __init__(self, net, step_size=0.001, loss='mse', opt='sgd', beta_1=0.9, beta_2=0.999, weight_decay=0.0,
