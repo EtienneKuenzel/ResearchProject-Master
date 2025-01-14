@@ -179,8 +179,20 @@ if __name__ == '__main__':
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
             # Example in PyTorch
-            torch.save(net.state_dict(), os.path.join(save_folder, f'model_weights_{task_idx}.pth'))
-
+            for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
+                net.layers[-1].weight.data = weight_layer[previous_task_idx]
+                net.layers[-1].bias.data = bias_layer[previous_task_idx]
+                x_train, y_train, x_test, y_test = load_imagenet(
+                    class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
+                x_train, x_test = x_train.float(), x_test.float()
+                x_test, y_test = x_test.to(dev), y_test.to(dev)
+                prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
+                for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+                    test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+                    test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+                    network_output, _ = net.predict(x=test_batch_x)
+                    prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
+                print(prev_accuracies.mean().item())
             # Current Task Activations
             activations = {}
             inputs_to_activations = {}
@@ -214,34 +226,34 @@ if __name__ == '__main__':
                     correlation = np.corrcoef(data_x, data_y)[0, 1]
                     if correlation > 0.9:#Maybe austauschen zu top10% and correlations im moment von layer -5
                         #merge neurons
-                        for neuron in range(128):
+                        for neuron in range(len(net.layers[-3].weight.data)):
                             net.layers[-3].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y]* (torch.std(data_x) / torch.std(data_y)))
                         #Reset values of consumed neuron
                         nlist.append(y)
                         nlist.append(x)
                         init.normal_(net.layers[-5].bias.data[y], mean=0.0, std=0.01)
                         init.normal_(net.layers[-5].weight.data[y], mean=0.0, std=0.01)
-                nlist = []
-                for x in range(128):
-                    if torch.std(np.maximum(0, task_activations[task_idx, 0, 0, x].flatten())) == 0:
+            print(len(nlist))
+            nlist = []
+            for x in range(len(net.layers[-3].weight.data)):
+                if torch.std(np.maximum(0, task_activations[task_idx, 0, 0, x].flatten())) == 0:
+                    continue
+                for y in range(x + 1, len(net.layers[-3].weight.data)):
+                    if x in nlist or y in nlist:
                         continue
-                    for y in range(x + 1, 128):
-                        if x in nlist or y in nlist:
-                            continue
-                        # Flatten and apply ReLU activation
-                        data_x = np.maximum(0, task_activations[task_idx, 0, 1, x].flatten())
-                        data_y = np.maximum(0, task_activations[task_idx, 0, 1, y].flatten())
-                        correlation = np.corrcoef(data_x, data_y)[0, 1]
-                        if correlation > 0.9:  # Maybe austauschen zu top10% and correlations im moment von layer -3
-                            # merge neurons
-                            for neuron in range(2):
-                                net.layers[-1].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y] * (torch.std(data_x) / torch.std(data_y)))
-                            # Reset values of consumed neuron
-                            nlist.append(y)
-                            nlist.append(x)
-                            init.normal_(net.layers[-3].bias.data[y], mean=0.0, std=0.01)
-                            init.normal_(net.layers[-3].weight.data[y], mean=0.0, std=0.01)
-                #print(nlist)
+                    # Flatten and apply ReLU activation
+                    data_x = np.maximum(0, task_activations[task_idx, 0, 1, x].flatten())
+                    data_y = np.maximum(0, task_activations[task_idx, 0, 1, y].flatten())
+                    correlation = np.corrcoef(data_x, data_y)[0, 1]
+                    if correlation > 0.8:  # Maybe austauschen zu top10% and correlations im moment von layer -3 merge layer
+                        for neuron in range(len(net.layers[-1].weight.data)):
+                            net.layers[-1].weight.data[neuron][x] += (net.layers[-3].weight.data[neuron][y] * (torch.std(data_x) / torch.std(data_y)))
+                        # Reset values of consumed neuron
+                        nlist.append(y)
+                        nlist.append(x)
+                        init.normal_(net.layers[-3].bias.data[y], mean=0.0, std=0.01)
+                        init.normal_(net.layers[-3].weight.data[y], mean=0.0, std=0.01)
+            print(len(nlist))
 
         for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
             net.layers[-1].weight.data = weight_layer[previous_task_idx]
