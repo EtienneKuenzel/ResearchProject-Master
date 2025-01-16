@@ -168,6 +168,8 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
 
+        weight_layer[task_idx] = net.layers[-1].weight.data
+        bias_layer[task_idx] = net.layers[-1].bias.data
         # Update training time
         training_time += (time.time() - start_time)
 
@@ -222,9 +224,12 @@ if __name__ == '__main__':
                             nlist.append(x)
                             init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
                             init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
+                print(nlist)
 
             #Stability +Current Performance
             for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
+                net.layers[-1].weight.data = weight_layer[previous_task_idx]
+                net.layers[-1].bias.data = bias_layer[previous_task_idx]
                 x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
                 x_train, x_test = x_train.float(), x_test.float()
                 x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -235,7 +240,7 @@ if __name__ == '__main__':
                     network_output, _ = net.predict(x=test_batch_x)
                     prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
                 historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-                print(prev_accuracies.mean().item())
+            print(prev_accuracies.mean().item())
 
 
             # OOD(Next Task)
@@ -254,6 +259,9 @@ if __name__ == '__main__':
             for layer in ["fc1", "fc2"]:
                 task_activations[int(task_idx/eval_every_tasks)][1][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()"""
+            # head reset for new task
+            net.layers[-1].weight.data.zero_()
+            net.layers[-1].bias.data.zero_()
     # Final save
     save_data({
         'last100_accuracies' :historical_accuracies.cpu(),
