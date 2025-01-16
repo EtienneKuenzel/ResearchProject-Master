@@ -147,8 +147,7 @@ if __name__ == '__main__':
     training_time = 0
     weight_layer = torch.zeros((num_tasks, 2, 128))
     bias_layer = torch.zeros(num_tasks, 2)
-
-
+    saliency_maps = torch.zeros(num_tasks, 3, 128, 128)  # Example: num_tasks, 3 channels, 128x128 input size
 
     # Training loop
     for task_idx in range(num_tasks):
@@ -156,12 +155,10 @@ if __name__ == '__main__':
         print("Task : " + str(task_idx))
         x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
         x_train, x_test = x_train.float(), x_test.float()
-        # x_train, x_test = x_train.flatten(1), x_test.flatten(1) for linear network
-
         x_train, y_train = x_train.to(dev), y_train.to(dev)
         x_test, y_test = x_test.to(dev), y_test.to(dev)
 
-        # Epoch loop
+        # Training loop
         for epoch_idx in range(num_epochs):
             example_order = np.random.permutation(1200)
             x_train, y_train = x_train[example_order], y_train[example_order]
@@ -169,11 +166,11 @@ if __name__ == '__main__':
             for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                 batch_x = x_train[start_idx:start_idx + mini_batch_size]
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
-                # show_batch(batch_x, batch_y, num_images_to_show=10, denormalize=True)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
-        #learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]),dev=dev) #for ewc
-        #timesafe
+
+        # Update training time
         training_time += (time.time() - start_time)
+
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
             # Example in PyTorch
@@ -194,9 +191,14 @@ if __name__ == '__main__':
             for layer in ["fc1", "fc2"]:
                 task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
-            nlist = []
+
             task_activations = task_activations.cpu()
             for layer_idx, layer_offset in enumerate([-5, -3]):
+                nlist = []
+                bias_mean = torch.mean(net.layers[layer_offset].bias.data)
+                bias_std = torch.std(net.layers[layer_offset].bias.data)
+                weight_mean = torch.mean(net.layers[layer_offset].weight.data)
+                weight_std = torch.std(net.layers[layer_offset].weight.data)
                 for x in range(len(net.layers[layer_offset].weight.data)):
                     if torch.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0:
                         continue
@@ -207,8 +209,7 @@ if __name__ == '__main__':
                         data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())
                         data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten())
                         correlation = np.corrcoef(data_x, data_y)[0, 1]
-
-                        if correlation > 0.9:  # Maybe replace with top 10% of correlations
+                        if correlation > 0.95:  # Maybe replace with top 10% of correlations
                             # Merge neurons
                             target_layer_offset = layer_offset + 2
                             for neuron in range(len(net.layers[target_layer_offset].weight.data)):
@@ -219,8 +220,8 @@ if __name__ == '__main__':
                             # Reset values of consumed neuron
                             nlist.append(y)
                             nlist.append(x)
-                            init.normal_(net.layers[layer_offset].bias.data[y], mean=0.0, std=0.0)
-                            init.normal_(net.layers[layer_offset].weight.data[y], mean=0.0, std=0.1)
+                            init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
+                            init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
 
             #Stability +Current Performance
             for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
@@ -234,7 +235,7 @@ if __name__ == '__main__':
                     network_output, _ = net.predict(x=test_batch_x)
                     prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
                 historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-                #print(prev_accuracies.mean().item())
+                print(prev_accuracies.mean().item())
 
 
             # OOD(Next Task)
