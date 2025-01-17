@@ -197,12 +197,13 @@ if __name__ == '__main__':
             task_activations = task_activations.cpu()
             for layer_idx, layer_offset in enumerate([-5, -3]):
                 nlist = []
+                consumed = 0
                 bias_mean = torch.mean(net.layers[layer_offset].bias.data)
                 bias_std = torch.std(net.layers[layer_offset].bias.data)
                 weight_mean = torch.mean(net.layers[layer_offset].weight.data)
                 weight_std = torch.std(net.layers[layer_offset].weight.data)
                 for x in range(len(net.layers[layer_offset].weight.data)):
-                    if torch.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0:
+                    if torch.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0 or consumed==1:
                         continue
                     for y in range(x + 1, len(net.layers[layer_offset].weight.data)):
                         if x in nlist or y in nlist:
@@ -215,15 +216,14 @@ if __name__ == '__main__':
                             # Merge neurons
                             target_layer_offset = layer_offset + 2
                             for neuron in range(len(net.layers[target_layer_offset].weight.data)):
-                                net.layers[target_layer_offset].weight.data[neuron][x] += (
-                                        net.layers[target_layer_offset].weight.data[neuron][y] * (
-                                            torch.std(data_x) / torch.std(data_y))
-                                )
+                                net.layers[target_layer_offset].weight.data[neuron][x] += (net.layers[target_layer_offset].weight.data[neuron][y] * (torch.std(data_x) / torch.std(data_y)))
                             # Reset values of consumed neuron
                             nlist.append(y)
                             nlist.append(x)
                             init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
                             init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
+                            consumed  = 1
+
                 print(nlist)
 
             #Stability +Current Performance
