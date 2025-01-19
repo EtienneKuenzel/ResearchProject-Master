@@ -175,6 +175,20 @@ if __name__ == '__main__':
 
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
+            for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
+                net.layers[-1].weight.data = weight_layer[previous_task_idx]
+                net.layers[-1].bias.data = bias_layer[previous_task_idx]
+                x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
+                x_train, x_test = x_train.float(), x_test.float()
+                x_test, y_test = x_test.to(dev), y_test.to(dev)
+                prev_accuracies = torch.zeros(x_test.shape[0] // mini_batch_size, dtype=torch.float)
+                for i, start_idx in enumerate(range(0, x_test.shape[0], mini_batch_size)):
+                    test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
+                    test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+                    network_output, _ = net.predict(x=test_batch_x)
+                    prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
+                historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
+            print(prev_accuracies.mean().item())
             # Example in PyTorch
             # Current Task Activations
             activations = {}
@@ -197,6 +211,7 @@ if __name__ == '__main__':
             task_activations = task_activations.cpu()
             for layer_idx, layer_offset in enumerate([-5, -3]):
                 nlist = []
+                target_layer_offset = layer_offset + 2
                 consumed = 0
                 bias_mean = torch.mean(net.layers[layer_offset].bias.data)
                 bias_std = torch.std(net.layers[layer_offset].bias.data)
@@ -214,7 +229,6 @@ if __name__ == '__main__':
                         correlation = np.corrcoef(data_x, data_y)[0, 1]
                         if correlation > 0.95:  # Maybe replace with top 10% of correlations
                             # Merge neurons
-                            target_layer_offset = layer_offset + 2
                             for neuron in range(len(net.layers[target_layer_offset].weight.data)):
                                 net.layers[target_layer_offset].weight.data[neuron][x] += (net.layers[target_layer_offset].weight.data[neuron][y] * (torch.std(data_x) / torch.std(data_y)))
                             # Reset values of consumed neuron
@@ -222,7 +236,15 @@ if __name__ == '__main__':
                             nlist.append(x)
                             init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
                             init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
-                            consumed  = 1
+                            #consumed  = 1
+                for x in range(len(net.layers[target_layer_offset].weight.data)):
+                    mean_activation = task_activations[task_idx, 0, layer_idx].flatten().mean()
+
+                    # Adjust the bias
+                    reduction_factor = 1 - (128-(len(nlist)/2)) / 128
+                    bias_adjustment = reduction_factor * mean_activation
+                    net.layers[target_layer_offset].bias.data[x] += bias_adjustment
+                    net.layers[target_layer_offset].weight.data[x] *= (128-(len(nlist)/2)) / 128#Scale the weight s
 
                 print(nlist)
 
