@@ -108,7 +108,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputtest.pkl"
-    num_epochs =  250
+    num_epochs =  25
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -226,6 +226,8 @@ if __name__ == '__main__':
                         # Flatten and apply ReLU activation
                         data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())
                         data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten())
+                        if torch.std(data_x) ==0 or torch.std(data_y)==0:
+                            continue
                         correlation = np.corrcoef(data_x, data_y)[0, 1]
                         if correlation > 0.95:  # Maybe replace with top 10% of correlations
                             # Merge neurons
@@ -234,16 +236,16 @@ if __name__ == '__main__':
                             # Reset values of consumed neuron
                             nlist.append(y)
                             nlist.append(x)
-                            init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
-                            init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
+                            #init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
+                            #init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
                             #consumed  = 1
                 for x in range(len(net.layers[target_layer_offset].weight.data)):
                     mean_activation = task_activations[task_idx, 0, layer_idx].flatten().mean()
 
                     # Adjust the bias
-                    reduction_factor = 1 - (128-(len(nlist)/2)) / 128
-                    bias_adjustment = reduction_factor * mean_activation
-                    net.layers[target_layer_offset].bias.data[x] += bias_adjustment
+                    #reduction_factor = 1 - (128-(len(nlist)/2)) / 128
+                    #bias_adjustment = reduction_factor * mean_activation
+                    #net.layers[target_layer_offset].bias.data[x] += bias_adjustment
                     net.layers[target_layer_offset].weight.data[x] *= (128-(len(nlist)/2)) / 128#Scale the weight s
 
                 print(nlist)
