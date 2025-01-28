@@ -236,18 +236,16 @@ if __name__ == '__main__':
                             # Reset values of consumed neuron
                             nlist.append(y)
                             nlist.append(x)
-                            #init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
-                            #init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
+                            init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
+                            init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
                             #consumed  = 1
                 for x in range(len(net.layers[target_layer_offset].weight.data)):
                     mean_activation = task_activations[task_idx, 0, layer_idx].flatten().mean()
-
                     # Adjust the bias
                     #reduction_factor = 1 - (128-(len(nlist)/2)) / 128
                     #bias_adjustment = reduction_factor * mean_activation
                     #net.layers[target_layer_offset].bias.data[x] += bias_adjustment
-                    net.layers[target_layer_offset].weight.data[x] *= (128-(len(nlist)/2)) / 128#Scale the weight s
-
+                    net.layers[target_layer_offset].weight.data[x] *= (128-(len(nlist)/2))/128
                 print(nlist)
 
             #Stability +Current Performance

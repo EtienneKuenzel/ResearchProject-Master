@@ -16,8 +16,8 @@ file_paths = [
     #'outputPAUfreeze.pkl',
     #'outputRELU+up.pkl',
     #'outputRELU+down.pkl',
-    'outputRELU+down.pkl']
-labels = [
+    'outputtest.pkl']
+labels = ["correlation",
           'RELU',
           #'LeakyRELU',
           'PAU',
@@ -38,7 +38,7 @@ activations = [data['task_activations'].numpy() for data in data_list]
 def moving_average(data, window_size):return np.convolve(data, np.ones(window_size) / window_size, mode='valid')
 
 smoothed_accuracies = [
-    moving_average([accuracy[x, 0] for x in range(2000)], 50)
+    moving_average([accuracy[x, 0] for x in range(150)], 10)
     for accuracy in historical_accuracies]
 
 plt.figure(figsize=(12, 6))
@@ -61,8 +61,8 @@ os.makedirs(output_dir, exist_ok=True)
 image_files = []
 num_tasks = len(historical_accuracies[0])
 step = 50  # Interval for averaging
-"""
-for task_idx in range(0, num_tasks, step):
+
+"""for task_idx in range(0, num_tasks, step):
     avg_accuracies = [
         np.mean(accuracy[max(0, task_idx - step):min(num_tasks, task_idx + step)], axis=0)
         for accuracy in historical_accuracies
@@ -89,47 +89,28 @@ for task_idx in range(0, num_tasks, step):
 gif_path = "accuracy_tasks_avg_around_50th.gif"
 with imageio.get_writer(gif_path, mode='I', duration=0.5) as writer:
     for image_file in image_files:
-        writer.append_data(imageio.imread(image_file))
+        writer.append_data(imageio.imread(image_file))"""
 
-"""
+
 frames = []
 def custom_activation(data):
     # Apply the custom transformation
     transformed_data = np.where(data < -3, 0, np.maximum(0, data))
     return transformed_data
-num_activation_tasks = 20  # Number of datapoints(equal to task_number/eval_every_tasks in singly_expr.py)
+num_activation_tasks = 150  # Number of datapoints(equal to task_number/eval_every_tasks in singly_expr.py)
 for i in range(num_activation_tasks):
-    i=2
+    #i=2
     for activation, label, color in zip(activations, labels, colors):
-        #sns.kdeplot(activation[i, 0, 0].flatten(), fill=True, alpha=0.2, label=label)
-        #continue
-        correlation_matrix = np.zeros((128, 128))
-
-        for x in range(128):
-            for y in range(128):
-                # Flatten and apply ReLU activation
-                data_x = custom_activation(activation[i, 0, 0, x].flatten())
-                data_y = custom_activation(activation[i, 0, 0, y].flatten())
-                # Compute absolute correlation coefficient
-                # Check for constant data to avoid divide-by-zero
-                correlation = np.corrcoef(data_x, data_y)[0, 1]
-                if np.array_equal(data_x, data_y):
-                    print(data_x)
-                    print(data_y)
-                    correlation==1
-                correlation_matrix[x, y] = correlation
-
-
-        # Plot the heatmap
-        plt.figure(figsize=(12, 10))
-        sns.heatmap(correlation_matrix, cmap="viridis", annot=False, square=True, cbar=True)
-        plt.title(f"Heatmap of Neuron Correlations (Task {i + 1})")
-        plt.xlabel("Neuron Index")
-        plt.ylabel("Neuron Index")
-        filename = f"frame_{i}.png"
-        plt.savefig(filename)
-        frames.append(filename)
-        plt.clf()
+        sns.kdeplot(activation[i, 0, 0].flatten(), fill=True, alpha=0.2, label=label)
+        print(activation[i, 0, 0].flatten())
+    plt.xlim(-5, 5)
+    plt.ylim(0, 1)
+    plt.grid(True)
+    plt.legend()
+    filename = f"frame_{i}.png"
+    plt.savefig(filename)
+    frames.append(filename)
+    plt.clf()
 # Create a GIF for activations
 gif_activation_path = "activations.gif"
 with imageio.get_writer(gif_activation_path, mode="I", fps=1) as writer:
