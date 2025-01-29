@@ -1,7 +1,7 @@
 import torch
 import pickle
 from tqdm import tqdm
-from lop.algos.bp import Backprop, DQN_EWC_Policy
+from lop.algos.bp import Backprop, EWC_Policy
 from lop.nets.conv_net import ConvNet_PAU, ConvNet_TENT, ConvNet
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputtest.pkl"
-    num_epochs =  25
+    num_epochs =  250
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -124,7 +124,7 @@ if __name__ == '__main__':
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
-    learner = Backprop(
+    learner = EWC_Policy(
         net=net,
         step_size=0.01,
         opt="sgd",
@@ -168,16 +168,17 @@ if __name__ == '__main__':
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
 
-        weight_layer[task_idx] = net.layers[-1].weight.data
-        bias_layer[task_idx] = net.layers[-1].bias.data
+        #weight_layer[task_idx] = net.layers[-1].weight.data
+        #bias_layer[task_idx] = net.layers[-1].bias.data
+        learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]))
         # Update training time
         training_time += (time.time() - start_time)
 
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
             for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 99), task_idx + 1)):
-                net.layers[-1].weight.data = weight_layer[previous_task_idx]
-                net.layers[-1].bias.data = bias_layer[previous_task_idx]
+                #net.layers[-1].weight.data = weight_layer[previous_task_idx]
+                #net.layers[-1].bias.data = bias_layer[previous_task_idx]
                 x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])
                 x_train, x_test = x_train.float(), x_test.float()
                 x_test, y_test = x_test.to(dev), y_test.to(dev)
@@ -188,7 +189,8 @@ if __name__ == '__main__':
                     network_output, _ = net.predict(x=test_batch_x)
                     prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
                 historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-            print(prev_accuracies.mean().item())
+                print(prev_accuracies.mean().item())
+            continue
             # Example in PyTorch
             # Current Task Activations
             activations = {}
