@@ -40,12 +40,11 @@ class Backprop(object):
             return loss.detach(), output.detach()
 
 class EWC_Policy(object):
-    def __init__(self, net, step_size=0.001, loss='nll', weight_decay=0.0,opt="s",to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0, lambda_ewc=10):
+    def __init__(self, net, step_size=0.001, loss='nll', weight_decay=0.0,opt="s",to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0, lambda_ewc=1):
         self.net = net.to(device)
         self.device = device
         self.lambda_ewc = lambda_ewc  # Regularization strength for EWC
         self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
-
         self.loss = loss
         self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
 
@@ -63,25 +62,18 @@ class EWC_Policy(object):
         x_test, y_test,_,_ = dataset
         x_test, y_test = x_test.float().to(self.device), y_test.to(self.device)
 
-        mini_batch_size = 100
-        for start_idx in range(0, x_test.shape[0], mini_batch_size):
-            test_batch_x = x_test[start_idx:start_idx + mini_batch_size]
-            test_batch_y = y_test[start_idx:start_idx + mini_batch_size]
+        test_batch_x = x_test[0:1200]
+        test_batch_y = y_test[0:1200]
 
-            self.net.zero_grad()
-            output, _ = self.net.predict(test_batch_x)
-            negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), test_batch_y.long())
-            negloglikelihood.backward(retain_graph=True)  # Ensuring graph is retained
-
-            for n, p in self.net.named_parameters():
-                if p.grad is not None:
-                    fisher[n] += (p.grad.data ** 2) / len(test_batch_x)  # Normalize per batch
+        self.net.zero_grad()
+        output, _ = self.net.predict(test_batch_x)
+        negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), test_batch_y.long())
+        negloglikelihood.backward(retain_graph=True)  # Ensuring graph is retained
+        for n, p in self.net.named_parameters():
+            if p.grad is not None:
+                fisher[n] += (p.grad.data ** 2) / len(test_batch_x)  # Normalize per batch
         self.fisher_matrix = fisher
 
-        # Debugging: Check if parameters actually change
-        for n, p in self.net.named_parameters():
-            if n in self.params_old:
-                diff = (p - self.params_old[n]).abs().mean().item()
         # Compute initial EWC penalty
         loss = 0.0
         for n, p in self.net.named_parameters():
