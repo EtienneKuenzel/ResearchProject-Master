@@ -62,18 +62,22 @@ class EWC_Policy(object):
         x_test, y_test,_,_ = dataset
         x_test, y_test = x_test.float().to(self.device), y_test.to(self.device)
 
-        test_batch_x = x_test[0:1200]
-        test_batch_y = y_test[0:1200]
+        batch_size = 200  # Smaller batch for stability
+        num_batches = len(x_test) // batch_size
 
-        self.net.zero_grad()
-        output, _ = self.net.predict(test_batch_x)
-        negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), test_batch_y.long())
-        negloglikelihood.backward(retain_graph=True)  # Ensuring graph is retained
-        for n, p in self.net.named_parameters():
-            if p.grad is not None:
-                fisher[n] += (p.grad.data ** 2) / len(test_batch_x)  # Normalize per batch
-        self.fisher_matrix = fisher
+        for i in range(num_batches):
+            test_batch_x = x_test[i * batch_size: (i + 1) * batch_size]
+            test_batch_y = y_test[i * batch_size: (i + 1) * batch_size]
 
+            self.net.zero_grad()
+            output, _ = self.net.predict(test_batch_x)
+            negloglikelihood = F.nll_loss(F.log_softmax(output, dim=1), test_batch_y.long())
+            negloglikelihood.backward()  # No need for retain_graph=True
+
+            for n, p in self.net.named_parameters():
+                if p.grad is not None:
+                    fisher[n] += (p.grad.data ** 2) / num_batches
+        self.fisher_matrix=fisher
         # Compute initial EWC penalty
         loss = 0.0
         for n, p in self.net.named_parameters():
