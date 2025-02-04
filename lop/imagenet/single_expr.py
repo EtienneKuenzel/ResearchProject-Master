@@ -102,13 +102,16 @@ def save_data(data, data_file):
         pickle.dump(data, f)
 
 
+def custom_activation(x):
+    return np.where(x > -3, np.maximum(0, x), -x - 3)
+
 if __name__ == '__main__':
     num_tasks = 1000
     use_gpu = 1
     mini_batch_size = 100
     run_idx = 3
-    data_file = "outputewc1.pkl"
-    num_epochs =  50
+    data_file = "outputc1.pkl"
+    num_epochs =  250
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -118,7 +121,7 @@ if __name__ == '__main__':
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     # Initialize network
-    net = ConvNet(activation="RELU")
+    net = ConvNet(activation="test")
     #net =ConvNet_PAU()
     #net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
@@ -204,22 +207,26 @@ if __name__ == '__main__':
                 bias_std = torch.std(net.layers[layer_offset].bias.data)
                 weight_mean = torch.mean(net.layers[layer_offset].weight.data)
                 weight_std = torch.std(net.layers[layer_offset].weight.data)
+                weight_std1 = torch.std(net.layers[target_layer_offset].weight.data)
+                weight_mean1 = torch.mean(net.layers[target_layer_offset].weight.data)
+
                 for x in range(len(net.layers[layer_offset].weight.data)):
-                    if torch.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0:
+                    if np.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0:
+                        init.normal_(net.layers[layer_offset].weight.data[x], mean=weight_mean, std=weight_std)
                         continue
                     for y in range(x + 1, len(net.layers[layer_offset].weight.data)):
                         if x in nlist or y in nlist:
-                                continue
-                        # Flatten and apply ReLU activation
-                        data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())
-                        data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten())
-                        if torch.std(data_x) ==0 or torch.std(data_y)==0:
+                            continue
+                        data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())#custom_activation(task_activations[task_idx, 0, layer_idx, x].flatten())
+                        data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten())#custom_activation(task_activations[task_idx, 0, layer_idx, y].flatten())
+                        if np.std(data_x) ==0 or np.std(data_y)==0:
                             continue
                         correlation = np.corrcoef(data_x, data_y)[0, 1]
                         if correlation > 0.95:  # Maybe replace with top 10% of correlation Merge neurons
                             for neuron in range(len(net.layers[target_layer_offset].weight.data)):
-                                net.layers[target_layer_offset].weight.data[neuron][x] += (net.layers[target_layer_offset].weight.data[neuron][y] * (torch.std(data_x) / torch.std(data_y)))
-                                #net.layers[target_layer_offset].weight.data[neuron][y] = 0.05
+                                net.layers[target_layer_offset].weight.data[neuron][x] += (net.layers[target_layer_offset].weight.data[neuron][y] * (np.std(data_x) / np.std(data_y)))
+                                init.normal_(net.layers[target_layer_offset].weight.data[neuron][y], mean=weight_mean1, std=weight_std1)
+
                             # Reset values of consumed neuron
                             init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
                             init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
