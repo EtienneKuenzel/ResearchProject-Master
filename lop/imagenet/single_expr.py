@@ -14,6 +14,13 @@ import torch.nn as nn
 import time as time
 import os
 import torch.nn.init as init
+import numpy as np
+import cv2
+import os
+
+import numpy as np
+import cv2
+import os
 
 # Function to display a batch of images
 def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
@@ -54,8 +61,6 @@ def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
         plt.axis('off')
 
     plt.show()
-
-
 def get_activation(name):
     def hook(model, input, output):
         # Store activations
@@ -70,7 +75,6 @@ def get_activation(name):
         else:
             inputs_to_activations[name] = torch.cat((inputs_to_activations[name], input[0].detach().clone()), dim=0)
     return hook
-
 def average_activation_input(activations, layer):
     activation_inputs = []
     for layer_name, act in activations.items():
@@ -79,8 +83,6 @@ def average_activation_input(activations, layer):
             for neuron_input in raw_input.permute(1, 0):  # Iterate over neurons (assuming N x M tensor)
                 activation_inputs.append(neuron_input.tolist())  # Append raw input values (as list)
     return activation_inputs
-
-
 def load_imagenet(classes=[]):
     x_train, y_train, x_test, y_test = [], [], [], []
     for idx, _class in enumerate(classes):
@@ -95,13 +97,9 @@ def load_imagenet(classes=[]):
     x_test = torch.tensor(np.concatenate(x_test))
     y_test = torch.from_numpy(np.concatenate(y_test))
     return x_train, y_train, x_test, y_test
-
-
 def save_data(data, data_file):
     with open(data_file, 'wb+') as f:
         pickle.dump(data, f)
-
-
 def custom_activation(x):
     return np.where(x > -3, np.maximum(0, x), -x - 3)
 
@@ -111,7 +109,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputc1.pkl"
-    num_epochs =  250
+    num_epochs =  25
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -121,13 +119,13 @@ if __name__ == '__main__':
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
     # Initialize network
-    net = ConvNet(activation="test")
+    net = ConvNet(activation="relu")
     #net =ConvNet_PAU()
     #net = ConvNet_TENT()
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
-    learner = Backprop(
+    learner = EWC_Policy(
         net=net,
         step_size=0.01,
         opt="sgd",
@@ -170,6 +168,7 @@ if __name__ == '__main__':
             for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                 batch_x = x_train[start_idx:start_idx + mini_batch_size]
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
+                #show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
 
         #weight_layer[task_idx] = net.layers[-1].weight.data
@@ -177,10 +176,10 @@ if __name__ == '__main__':
         #learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]))
         # Update training time
         training_time += (time.time() - start_time)
-
+        learner.register_ewc_params(x_train,y_train, 100, 12)
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
-            # Current Task Activations
+            """# Current Task Activations
             activations = {}
             inputs_to_activations = {}
             hooks = []
@@ -234,7 +233,7 @@ if __name__ == '__main__':
                             nlist.append(x)
                 max_weight_new = torch.max(net.layers[target_layer_offset].weight)
                 net.layers[target_layer_offset].weight.data *= max_weight_old/max_weight_new
-                #print(nlist)
+                #print(nlist)"""
 
             for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 9), task_idx + 1)):
                 #net.layers[-1].weight.data = weight_layer[previous_task_idx]
@@ -249,7 +248,7 @@ if __name__ == '__main__':
                     network_output, _ = net.predict(x=test_batch_x)
                     prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
                 historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-            print(prev_accuracies.mean().item())
+                print(prev_accuracies.mean().item())
             # head reset for new task
             #net.layers[-1].weight.data.zero_()
             #net.layers[-1].bias.data.zero_()
