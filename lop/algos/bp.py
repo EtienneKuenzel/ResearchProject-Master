@@ -7,11 +7,83 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader
 import torch.nn.functional as F
 import torch.autograd as autograd
+import torch.nn.init as init
+
 class Backprop(object):
     def __init__(self, net, step_size=0.001, loss='nll', opt='sgd', beta_1=0.9, beta_2=0.999, weight_decay=0.0,
                  to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0):
         self.net = net
         self.to_perturb = to_perturb
+        self.device = device
+
+        # define the optimizer
+        if opt == 'sgd':
+            self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
+        elif opt == 'adam':
+            self.opt = optim.Adam(self.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
+        elif opt == 'adamW':
+            self.opt = optim.AdamW(eslf.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
+
+        # define the loss function
+        self.loss = loss
+        self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
+
+    def prune_merge_neurons(self, task_activations, task_idx):
+        task_activations = task_activations.cpu()
+        for layer_idx, layer_offset in enumerate([-5, -3]):
+            nlist = []
+            target_layer_offset = layer_offset + 2
+            max_weight_old = torch.max(self.net.layers[target_layer_offset].weight).item()
+            bias_mean = torch.mean(self.net.layers[layer_offset].bias.data)
+            bias_std = torch.std(self.net.layers[layer_offset].bias.data)
+            weight_mean = torch.mean(self.net.layers[layer_offset].weight.data)
+            weight_std = torch.std(self.net.layers[layer_offset].weight.data)
+
+            weight_std1 = torch.std(self.net.layers[target_layer_offset].weight.data)
+            weight_mean1 = torch.mean(self.net.layers[target_layer_offset].weight.data)
+
+            for x in range(len(self.net.layers[layer_offset].weight.data)):
+                activation_x = task_activations[task_idx, 0, layer_idx, x].flatten().cpu().numpy()
+                if np.std(np.maximum(0, activation_x)) == 0:
+                    init.normal_(self.net.layers[layer_offset].weight.data[x], mean=weight_mean, std=weight_std)
+                    continue
+
+                for y in range(x + 1, len(self.net.layers[layer_offset].weight.data)):
+                    if x in nlist or y in nlist:
+                        continue
+
+                    data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten().cpu().numpy())
+                    data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten().cpu().numpy())
+
+                    if np.std(data_x) == 0 or np.std(data_y) == 0:
+                        continue
+
+                    correlation = np.corrcoef(data_x, data_y)[0, 1]
+                    if correlation > 0.95:
+                        for neuron in range(len(self.net.layers[target_layer_offset].weight.data)):
+                            adjustment = self.net.layers[target_layer_offset].weight.data[neuron][y] * (np.std(data_x) / np.std(data_y))
+                            self.net.layers[target_layer_offset].weight.data[neuron][x] += adjustment
+                            init.normal_(self.net.layers[target_layer_offset].weight.data[neuron][y], mean=weight_mean1,std=weight_std1)
+                        # Reset values of the merged (consumed) neuron
+                        init.normal_(self.net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
+                        init.normal_(self.net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
+
+                        nlist.extend([y, x])
+
+            max_weight_new = torch.max(self.net.layers[target_layer_offset].weight).item()
+            self.net.layers[target_layer_offset].weight.data *= (max_weight_old / max_weight_new)
+    def learn(self, x, target):
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        loss = self.loss_func(output, target.long())
+
+        loss.backward()
+        self.opt.step()
+        if self.loss == 'nll':
+            return loss.detach(), output.detach()
+class decreaseBackprop(object):
+    def __init__(self, net, step_size=0.001, loss='nll', opt='sgd', beta_1=0.9, beta_2=0.999, weight_decay=0.0,to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0):
+        self.net = net
         self.device = device
 
         # define the optimizer
@@ -27,32 +99,49 @@ class Backprop(object):
         self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
 
 
-    def learn(self, x, target):
+    def learn(self, x, target,task):
+        layer_scaling = {
+            "conv1.weight": 0.5,
+            "conv1.bias": 0.5,
+            "conv2.weight": 0.6,
+            "conv2.bias": 0.6,
+            "conv3.weight": 0.7,
+            "conv3.bias": 0.7,
+            "fc1.weight": 0.8,
+            "fc1.bias": 0.8,
+            "fc2.weight": 0.9,
+            "fc2.bias": 0.9,
+            "fc3.weight": 1.0,
+            "fc3.bias": 1.0
+        }
+        layer_scaling = {name: scale + (1 - scale)*1.005**-task for name, scale in layer_scaling.items()}
+
+
         self.opt.zero_grad()
         output, features = self.net.predict(x=x)
         loss = self.loss_func(output, target.long())
 
         loss.backward()
+        for name, param in self.net.named_parameters():
+            if name in layer_scaling:
+                param.grad *= layer_scaling[name]
         self.opt.step()
-        if self.loss == 'nll':
-            return loss.detach(), output.detach()
-
+        return loss.detach(), output.detach()
 class EWC_Policy(object):
     def __init__(self, net, step_size=0.001, loss='nll', weight_decay=0.0,opt="s",to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0, lambda_ewc=1):
         self.net = net.to(device)
         self.device = device
-        self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
+        self.opt = optim.Adam(self.net.parameters(), lr=step_size, weight_decay=weight_decay)
         self.loss = loss
         self.crit = nn.CrossEntropyLoss()
-        self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
-        self.weight = 100
+        self.loss_func = nn.CrossEntropyLoss()
+        self.weight =100000000000000
     def _update_mean_params(self):
         for param_name, param in self.net.named_parameters():
             _buff_param_name = param_name.replace('.', '__')
             self.net.register_buffer(_buff_param_name+'_estimated_mean', param.data.clone())
 
     def _update_fisher_params(self, x_train, y_train, batch_size, num_batch):
-        # Make sure your data is in tensor form
         if not isinstance(x_train, torch.Tensor):
             x_train = torch.tensor(x_train, dtype=torch.float32)  # adapt dtype if necessary
         if not isinstance(y_train, torch.Tensor):
@@ -62,23 +151,17 @@ class EWC_Policy(object):
         train_dataset = TensorDataset(x_train, y_train)
         dl = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
 
-        log_likelihoods = []
-
-        for i, (inputs, targets) in enumerate(dl):
-            if i >= num_batch:
+        log_liklihoods = []
+        for i, (input, target) in enumerate(dl):
+            if i > num_batch:
                 break
-            outputs = F.log_softmax(self.net.predict(inputs.to(self.device))[0], dim=1)
-            # Select the log likelihood for the correct class per sample
-            selected = outputs[range(outputs.shape[0]), targets]
-            log_likelihoods.append(selected)
-
-        log_likelihood = torch.cat(log_likelihoods).mean()
-
-        grad_log_likelihood = autograd.grad(log_likelihood, self.net.parameters(), create_graph=False)
-
-        _buff_param_names = [name.replace('.', '__') for name, _ in self.net.named_parameters()]
-        for _buff_param_name, grad in zip(_buff_param_names, grad_log_likelihood):
-            self.net.register_buffer(_buff_param_name + '_estimated_fisher', grad.data.clone() ** 2)
+            output = F.log_softmax(self.net.predict(input.to(self.device))[0], dim=1)
+            log_liklihoods.append(output[:, target])
+        log_likelihood = torch.cat(log_liklihoods).mean()
+        grad_log_liklihood = autograd.grad(log_likelihood, self.net.parameters())
+        _buff_param_names = [param[0].replace('.', '__') for param in self.net.named_parameters()]
+        for _buff_param_name, param in zip(_buff_param_names, grad_log_liklihood):
+            self.net.register_buffer(_buff_param_name + '_estimated_fisher', param.data.clone() ** 2)
 
     def register_ewc_params(self, x,y, batch_size, num_batches):
         self._update_fisher_params(x,y, batch_size, num_batches)
