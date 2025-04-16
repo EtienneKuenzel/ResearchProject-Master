@@ -23,44 +23,6 @@ import cv2
 import os
 
 # Function to display a batch of images
-def show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False):
-    """
-    Displays a few images from the given batch with their corresponding labels.
-
-    Parameters:
-    - batch_x: Tensor of images (batch_size, channels, height, width)
-    - batch_y: Tensor of labels (batch_size)
-    - num_images_to_show: Number of images to display from the batch (default: 4)
-    - denormalize: Whether to denormalize the image before displaying (default: False)
-    """
-    mean = [0.485, 0.456, 0.406]  # ImageNet mean
-    std = [0.229, 0.224, 0.225]  # ImageNet std
-
-    # Helper function to denormalize
-    def denormalize_image(img):
-        img = img.clone()
-        for i in range(3):  # Assuming RGB images
-            img[i] = img[i] * std[i] + mean[i]
-        return img
-
-    plt.figure(figsize=(12, 6))
-
-    for i in range(min(num_images_to_show, len(batch_x))):
-        img = batch_x[i]
-        label = batch_y[i].item() if batch_y[i].dim() == 0 else batch_y[i].argmax().item()  # Handle one-hot labels
-
-        if denormalize:
-            img = denormalize_image(img)
-
-        # Convert to PIL image for visualization
-        img = T.ToPILImage()(img.cpu())
-
-        plt.subplot(1, num_images_to_show, i + 1)
-        plt.imshow(img)
-        plt.title(f"Label: {label}")
-        plt.axis('off')
-
-    plt.show()
 def get_activation(name):
     def hook(model, input, output):
         # Store activations
@@ -109,7 +71,7 @@ if __name__ == '__main__':
     mini_batch_size = 100
     run_idx = 3
     data_file = "outputc1.pkl"
-    num_epochs =  25
+    num_epochs =  10
     eval_every_tasks = 1
     save_folder = data_file + "model"
     # Device setup
@@ -125,7 +87,7 @@ if __name__ == '__main__':
     #net = MyLinear(input_size=3072, num_outputs=classes_per_task)
 
     # Initialize learner
-    learner = EWC_Policy(
+    learner = Backprop(
         net=net,
         step_size=0.01,
         opt="sgd",
@@ -149,37 +111,32 @@ if __name__ == '__main__':
     weight_layer = torch.zeros((num_tasks, 2, 128))
     bias_layer = torch.zeros(num_tasks, 2)
     saliency_maps = torch.zeros(num_tasks, 3, 128, 128)  # Example: num_tasks, 3 channels, 128x128 input size
+    example_order = np.random.permutation(1200)
 
     # Training loop
     for task_idx in range(num_tasks):
         start_time = time.time()
         print("Task : " + str(task_idx))
+        example_order = np.random.permutation(1200)
         x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
         x_train, x_test = x_train.float(), x_test.float()
-        x_train, y_train = x_train.to(dev), y_train.to(dev)
-        x_test, y_test = x_test.to(dev), y_test.to(dev)
-
-        # Training loop
+        x_train, y_train, x_test, y_test = x_train.to(dev), y_train.to(dev), x_test.to(dev), y_test.to(dev)
+        x_train, y_train = x_train[example_order], y_train[example_order]
 
         for epoch_idx in range(num_epochs):
-            example_order = np.random.permutation(1200)
-            x_train, y_train = x_train[example_order], y_train[example_order]
-
             for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                 batch_x = x_train[start_idx:start_idx + mini_batch_size]
                 batch_y = y_train[start_idx:start_idx + mini_batch_size]
-                #show_batch(batch_x, batch_y, num_images_to_show=4, denormalize=False)
                 loss, network_output = learner.learn(x=batch_x, target=batch_y)
+        #learner.register_ewc_params(x_train,y_train, 100, 12)
 
         #weight_layer[task_idx] = net.layers[-1].weight.data
         #bias_layer[task_idx] = net.layers[-1].bias.data
-        #learner.update_ewc_penalty(load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2]))
         # Update training time
         training_time += (time.time() - start_time)
-        learner.register_ewc_params(x_train,y_train, 100, 12)
         #Eval 100 tasks
         if task_idx%eval_every_tasks ==0:
-            """# Current Task Activations
+            # Current Task Activations
             activations = {}
             inputs_to_activations = {}
             hooks = []
@@ -197,45 +154,10 @@ if __name__ == '__main__':
                 task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
             for hook in hooks: hook.remove()
 
-            task_activations = task_activations.cpu()
-            for layer_idx, layer_offset in enumerate([-5, -3]):
-                nlist = []
-                target_layer_offset = layer_offset + 2
-                max_weight_old = torch.max(net.layers[target_layer_offset].weight)
-                bias_mean = torch.mean(net.layers[layer_offset].bias.data)
-                bias_std = torch.std(net.layers[layer_offset].bias.data)
-                weight_mean = torch.mean(net.layers[layer_offset].weight.data)
-                weight_std = torch.std(net.layers[layer_offset].weight.data)
-                weight_std1 = torch.std(net.layers[target_layer_offset].weight.data)
-                weight_mean1 = torch.mean(net.layers[target_layer_offset].weight.data)
-
-                for x in range(len(net.layers[layer_offset].weight.data)):
-                    if np.std(np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())) == 0:
-                        init.normal_(net.layers[layer_offset].weight.data[x], mean=weight_mean, std=weight_std)
-                        continue
-                    for y in range(x + 1, len(net.layers[layer_offset].weight.data)):
-                        if x in nlist or y in nlist:
-                            continue
-                        data_x = np.maximum(0, task_activations[task_idx, 0, layer_idx, x].flatten())#custom_activation(task_activations[task_idx, 0, layer_idx, x].flatten())
-                        data_y = np.maximum(0, task_activations[task_idx, 0, layer_idx, y].flatten())#custom_activation(task_activations[task_idx, 0, layer_idx, y].flatten())
-                        if np.std(data_x) ==0 or np.std(data_y)==0:
-                            continue
-                        correlation = np.corrcoef(data_x, data_y)[0, 1]
-                        if correlation > 0.95:  # Maybe replace with top 10% of correlation Merge neurons
-                            for neuron in range(len(net.layers[target_layer_offset].weight.data)):
-                                net.layers[target_layer_offset].weight.data[neuron][x] += (net.layers[target_layer_offset].weight.data[neuron][y] * (np.std(data_x) / np.std(data_y)))
-                                init.normal_(net.layers[target_layer_offset].weight.data[neuron][y], mean=weight_mean1, std=weight_std1)
-
-                            # Reset values of consumed neuron
-                            init.normal_(net.layers[layer_offset].bias.data[y], mean=bias_mean, std=bias_std)
-                            init.normal_(net.layers[layer_offset].weight.data[y], mean=weight_mean, std=weight_std)
-                            nlist.append(y)
-                            nlist.append(x)
-                max_weight_new = torch.max(net.layers[target_layer_offset].weight)
-                net.layers[target_layer_offset].weight.data *= max_weight_old/max_weight_new
-                #print(nlist)"""
-
+            learner.prune_merge_neurons(task_activations, task_idx) #Correlation Algorithm
+            #Stability/Plasticity Eval
             for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 9), task_idx + 1)):
+                print(previous_task_idx)
                 #net.layers[-1].weight.data = weight_layer[previous_task_idx]
                 #net.layers[-1].bias.data = bias_layer[previous_task_idx]
                 x_train, y_train, x_test, y_test = load_imagenet(class_order[previous_task_idx * 2:(previous_task_idx + 1) * 2])

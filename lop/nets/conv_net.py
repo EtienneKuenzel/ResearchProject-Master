@@ -13,7 +13,7 @@ class ConvNet(nn.Module):
         self.conv1 = nn.Conv2d(3, 32, 5)
         self.conv2 = nn.Conv2d(32, 64, 3)
         self.conv3 = nn.Conv2d(64, 128, 3)
-        self.last_filter_output = 2 * 2
+        self.last_filter_output = 4
         self.num_conv_outputs = 128 * self.last_filter_output
         self.fc1 = nn.Linear(self.num_conv_outputs, 128)
         self.fc2 = nn.Linear(128, 128)
@@ -54,6 +54,7 @@ class ConvNet(nn.Module):
         x2 = self.pool(self.layers[3](self.layers[2](x1)))
         x3 = self.pool(self.layers[5](self.layers[4](x2)))
         x3 = x3.view(-1, self.num_conv_outputs)
+
         x4 = self.layers[7](self.layers[6](x3))
         x5 = self.layers[9](self.layers[8](x4))
         x6 = self.layers[10](x5)
