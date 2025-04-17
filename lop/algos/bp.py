@@ -10,23 +10,11 @@ import torch.autograd as autograd
 import torch.nn.init as init
 
 class Backprop(object):
-    def __init__(self, net, step_size=0.001, loss='nll', opt='sgd', beta_1=0.9, beta_2=0.999, weight_decay=0.0,
-                 to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0):
+    def __init__(self, net, step_size=0.001, weight_decay=0.0, device='cpu', momentum=0):
         self.net = net
-        self.to_perturb = to_perturb
         self.device = device
-
-        # define the optimizer
-        if opt == 'sgd':
-            self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
-        elif opt == 'adam':
-            self.opt = optim.Adam(self.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
-        elif opt == 'adamW':
-            self.opt = optim.AdamW(eslf.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
-
-        # define the loss function
-        self.loss = loss
-        self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
+        self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
+        self.loss_func = F.cross_entropy
 
     def prune_merge_neurons(self, task_activations, task_idx):
         task_activations = task_activations.cpu()
@@ -72,51 +60,21 @@ class Backprop(object):
 
             max_weight_new = torch.max(self.net.layers[target_layer_offset].weight).item()
             self.net.layers[target_layer_offset].weight.data *= (max_weight_old / max_weight_new)
-    def learn(self, x, target):
-        self.opt.zero_grad()
-        output, features = self.net.predict(x=x)
-        loss = self.loss_func(output, target.long())
-
-        loss.backward()
-        self.opt.step()
-        if self.loss == 'nll':
-            return loss.detach(), output.detach()
-class decreaseBackprop(object):
-    def __init__(self, net, step_size=0.001, loss='nll', opt='sgd', beta_1=0.9, beta_2=0.999, weight_decay=0.0,to_perturb=False, perturb_scale=0.1, device='cpu', momentum=0):
-        self.net = net
-        self.device = device
-
-        # define the optimizer
-        if opt == 'sgd':
-            self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
-        elif opt == 'adam':
-            self.opt = optim.Adam(self.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
-        elif opt == 'adamW':
-            self.opt = optim.AdamW(self.net.parameters(), lr=step_size, betas=(beta_1, beta_2),weight_decay=weight_decay)
-
-        # define the loss function
-        self.loss = loss
-        self.loss_func = {'nll': F.cross_entropy, 'mse': F.mse_loss}[self.loss]
-
-
-    def learn(self, x, target,task):
+    def learn(self, x, target, task,decrease=0 ):
         layer_scaling = {
-            "conv1.weight": 0.5,
-            "conv1.bias": 0.5,
-            "conv2.weight": 0.6,
-            "conv2.bias": 0.6,
-            "conv3.weight": 0.7,
-            "conv3.bias": 0.7,
-            "fc1.weight": 0.8,
-            "fc1.bias": 0.8,
-            "fc2.weight": 0.9,
-            "fc2.bias": 0.9,
+            "conv1.weight": 1-(decrease*5),
+            "conv1.bias": 1-(decrease*5),
+            "conv2.weight": 1-(decrease*4),
+            "conv2.bias": 1-(decrease*4),
+            "conv3.weight": 1-(decrease*3),
+            "conv3.bias": 1-(decrease*3),
+            "fc1.weight": 1-(decrease*2),
+            "fc1.bias": 1-(decrease*2),
+            "fc2.weight": 1-(decrease*1),
+            "fc2.bias": 1-(decrease*1),
             "fc3.weight": 1.0,
-            "fc3.bias": 1.0
-        }
-        layer_scaling = {name: scale + (1 - scale)*1.005**-task for name, scale in layer_scaling.items()}
-
-
+            "fc3.bias": 1.0}
+        layer_scaling = {name: scale + (1 - scale) * 1.005 ** -task for name, scale in layer_scaling.items()}
         self.opt.zero_grad()
         output, features = self.net.predict(x=x)
         loss = self.loss_func(output, target.long())
