@@ -64,7 +64,7 @@ if __name__ == '__main__':
     data_file = "outputc1.pkl"
     num_epochs =  250
     eval_every_tasks = 500
-    runs = 10
+    runs = 5
     # Device setup
     dev = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
@@ -86,7 +86,7 @@ if __name__ == '__main__':
         class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
 
         # Initialize accuracy tracking
-        task_activations = torch.zeros(int(num_tasks/eval_every_tasks),3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
+        task_activations = torch.zeros(int(num_tasks/eval_every_tasks)+1,3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
         historical_accuracies = torch.zeros(num_tasks, 100)
         training_time = 0
         weight_layer = torch.zeros((num_tasks, 2, 128))
@@ -108,7 +108,7 @@ if __name__ == '__main__':
                 for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                     batch_x = x_train[start_idx:start_idx + mini_batch_size]
                     batch_y = y_train[start_idx:start_idx + mini_batch_size]
-                    loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0.1)
+                    loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0)
             #learner.register_ewc_params(x_train,y_train, 100, 12)
 
             weight_layer[task_idx] = net.layers[-1].weight.data
