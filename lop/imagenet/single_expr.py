@@ -87,7 +87,7 @@ if __name__ == '__main__':
 
         # Initialize accuracy tracking
         task_activations = torch.zeros(int(num_tasks/eval_every_tasks)+1,3,3,128, 200)#numtasks, 3=layer, 3=CurrentTask+OOD(Next Task)+Adveserial Attack,100=Datapoints
-        historical_accuracies = torch.zeros(num_tasks, 100)
+        historical_accuracies = torch.zeros(num_tasks, 10)
         training_time = 0
         weight_layer = torch.zeros((num_tasks, 2, 128))
         bias_layer = torch.zeros(num_tasks, 2)
@@ -153,10 +153,10 @@ if __name__ == '__main__':
                 # head reset for new task
                 net.layers[-1].weight.data.zero_()
                 net.layers[-1].bias.data.zero_()
-        # Final save
-        save_data({
-            'last100_accuracies' :historical_accuracies.cpu(),
-            'time per task'  : training_time/num_tasks, #Training Time
-            'task_activations': task_activations.cpu(),
-        }, data_file)
+            # Final save
+            save_data({
+                'last100_accuracies' :historical_accuracies.cpu(),
+                'time per task'  : training_time/num_tasks, #Training Time
+                'task_activations': task_activations.cpu(),
+            }, data_file)
 
