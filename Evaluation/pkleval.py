@@ -17,59 +17,26 @@ def load_data(file_path):
 
 def plot_average_ttp(file_paths, window_size=1, selected_indices=[0,1,2,3,4]):
     all_ttp_values = []
+    x_pos = []
     labels = ['Relu',"Relu+down+decrease 0.05","Relu+down+decrease 0.10", "Relu+down+decrease 0.15", "Relu+down(Convolutions locked)", "Relu+down(FC locked)"]
     colors = ['r', 'b', 'g', 'brown', 'pink', "purple", "r"]
-    import pickle
+    plt.figure(figsize=(12, 5.8))
 
-    # Load the pickle file
-    with open('relu.pkl', 'rb') as f:
-        data = pickle.load(f)
-
-    # Inspect the top-level type and a sample
-    print(f"Top-level type: {type(data)}")
-
-    # If it's a list or dict, show more info
-    if isinstance(data, list):
-        print(f"List of length: {len(data)}")
-        print(f"Type of first element: {type(data[0])}")
-        if isinstance(data[0], dict):
-            print(f"Keys in first element: {data[0].keys()}")
-    elif isinstance(data, dict):
-        print(f"Keys in dict: {data.keys()}")
-        first_key = list(data.keys())[0]
-        print(f"Type of first item: {type(data[first_key])}")
-    for file_path in file_paths:
-        data = load_data(file_path)
-        print(len(data))
-        print(len(data['last100_accuracies']))
-        print(data['last100_accuracies'][500][0])
-        ttp_values = np.array([data['last100_accuracies'][i].numpy() for i in selected_indices])
-
-        # Subtract the first value so each plot starts at zero
-        ttp_values = ttp_values - ttp_values[:, 0][:, np.newaxis]
-
-        all_ttp_values.append(ttp_values)
-
-    plt.figure(figsize=(12, 5))
-    for ttp_values, label, color in zip(all_ttp_values, labels, colors):
-        ttp_values_mean = np.mean(np.vstack(ttp_values), axis=0)
-        ttp_values_smoothed = np.convolve(ttp_values_mean, np.ones(window_size) / window_size, mode='valid')
-
-        # Ensure first point starts at zero
-        ttp_values_smoothed -= ttp_values_smoothed[0]
-        if label == "Relu+down(FC locked)":
-            plt.plot(ttp_values_smoothed+109, linestyle='-', color=color, label=label)
-        else:
-            plt.plot(ttp_values_smoothed+51, linestyle='-', color=color, label=label)
-
-
-
+    for i1, path in enumerate(file_paths):
+        data = load_data(path)["last100_accuracies"].numpy()
+        for i2, x in enumerate(data):
+            if i2 % 500 == 0:
+                x_pos.append(i2)
+                all_ttp_values.append(x[0])
+        plt.plot(x_pos, all_ttp_values, label=labels[i1])
     plt.xlabel('Task')
-    plt.ylabel('Epochs to Reach 85% Accuracy')
+    plt.ylabel('Accuracy')
     plt.legend()
-    plt.xlim(-10,1500)
-    plt.ylim(0,150)
+    plt.xlim(-10,5000)
+    plt.ylim(0,1)
     plt.grid(True)
+    plt.tight_layout()
+
     plt.show()
 
 
@@ -134,15 +101,15 @@ def activation(filepaths):
         with open(file_path, 'rb') as file:
             data_list.append(pickle.load(file))
     activations = [data['task_activations'] for data in data_list]
-    labels = ["Relu+down (FC Locked)",]
+    labels = ["Relu"]
     colors = ["red","blue","green", "brown", "pink"]
     for activation, label, color in zip(activations, labels, colors):
-        print(label)
+        print(len(activation))
         frames =[]
-        for i in range(200):#20
+        for i in range(11):#20
             #i*=50
             plt.figure(figsize=(8, 6))  # Optional: Adjust figure size for better clarity
-            data = activation[0][i, 0, 0].flatten()
+            data = activation[i][0, 0, 0].flatten()
             mean_value = np.mean(data.cpu().numpy())  # Convert tensor to NumPy before computing mean
             sns.kdeplot(data, fill=True, alpha=0.2, label=label, color="blue")  # KDE plot
             plt.axvline(mean_value, linestyle="dashed", color="red", alpha=0.8, linewidth=2, label=f"{label} Mean")  # Mean line
@@ -151,6 +118,9 @@ def activation(filepaths):
             plt.grid(True)
             plt.legend()
             plt.title("Task : " + str(i*10))
+            plt.tight_layout()
+            plt.xlabel('Parameter Values')
+            plt.ylabel('Density')
             filename = f"frame_{i}.png"
             plt.savefig(filename)
             frames.append(filename)
@@ -162,6 +132,6 @@ if __name__ == "__main__":
     file_paths = [
         "relu.pkl"
     ]  # Add both files
-    plot_average_ttp(file_paths)
+    #plot_average_ttp(file_paths)
     #timepertask(file_paths)
     activation(file_paths)
