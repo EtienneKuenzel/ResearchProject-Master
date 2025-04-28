@@ -69,9 +69,8 @@ def custom_activation(x):
 if __name__ == '__main__':
     num_tasks = 5050
     mini_batch_size = 100
-    data_file = "outputc1.pkl"
     num_epochs =  250
-    eval_every_tasks = 500
+    eval_every_tasks = 25
     runs = 5
     # Device setup
     dev = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
@@ -79,6 +78,7 @@ if __name__ == '__main__':
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
     for run in range(runs):
+        data_file = "relu" + str(run) + ".pkl"
         # Initialize network
         net = ConvNet(activation="relu")
         # Initialize learner
@@ -100,32 +100,29 @@ if __name__ == '__main__':
         weight_layer = torch.zeros((num_tasks, 2, 128))
         bias_layer = torch.zeros(num_tasks, 2)
         saliency_maps = torch.zeros(num_tasks, 3, 128, 128)  # Example: num_tasks, 3 channels, 128x128 input size
-        example_order = np.random.permutation(1200)
 
         # Training loop
         for task_idx in range(num_tasks):
             start_time = time.time()
             print("Run : "+ str(run)+ " Task : " + str(task_idx))
-            example_order = np.random.permutation(1200)
             x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
             x_train, x_test = x_train.float(), x_test.float()
-            x_train, y_train, x_test, y_test = x_train.to(dev), y_train.to(dev), x_test.to(dev), y_test.to(dev)
-            x_train, y_train = x_train[example_order], y_train[example_order]
+            x_train, y_train = x_train.to(dev), y_train.to(dev)
+            x_test, y_test = x_test.to(dev), y_test.to(dev)
 
             for epoch_idx in range(num_epochs):
+                example_order = np.random.permutation(1200)
+                x_train, y_train = x_train[example_order], y_train[example_order]
                 for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                     batch_x = x_train[start_idx:start_idx + mini_batch_size]
                     batch_y = y_train[start_idx:start_idx + mini_batch_size]
                     loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0)
-            #learner.register_ewc_params(x_train,y_train, 100, 12)
-
             weight_layer[task_idx] = net.layers[-1].weight.data
             bias_layer[task_idx] = net.layers[-1].bias.data
-            # Update training time
             training_time += (time.time() - start_time)
             #Eval 100 tasks
             if task_idx%eval_every_tasks ==0:
-                # Current Task Activations
+                """# Current Task Activations
                 activations = {}
                 inputs_to_activations = {}
                 hooks = []
@@ -141,8 +138,7 @@ if __name__ == '__main__':
 
                 for layer in ["fc1", "fc2"]:
                     task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
-                for hook in hooks: hook.remove()
-
+                for hook in hooks: hook.remove()"""
                 #learner.prune_merge_neurons(task_activations, task_idx) #Correlation Algorithm
                 #Stability/Plasticity Eval
                 for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 9), task_idx + 1)):
@@ -158,9 +154,9 @@ if __name__ == '__main__':
                         network_output, _ = net.predict(x=test_batch_x)
                         prev_accuracies[i] = accuracy(F.softmax(network_output, dim=1), test_batch_y)
                     historical_accuracies[task_idx][task_idx-previous_task_idx] = prev_accuracies.mean().item()
-                # head reset for new task
-                net.layers[-1].weight.data.zero_()
-                net.layers[-1].bias.data.zero_()
+            # head reset for new task
+            net.layers[-1].weight.data.zero_()
+            net.layers[-1].bias.data.zero_()
         # Final save
         save_data({
             'last100_accuracies' :historical_accuracies.cpu(),
