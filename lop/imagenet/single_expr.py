@@ -52,9 +52,17 @@ def load_imagenet(classes=[]):
     x_test = torch.tensor(np.concatenate(x_test))
     y_test = torch.from_numpy(np.concatenate(y_test))
     return x_train, y_train, x_test, y_test
+
+
 def save_data(data, data_file):
-    with open(data_file, 'wb+') as f:
-        pickle.dump(data, f)
+    if os.path.exists(data_file):
+        with open(data_file, 'rb') as f:
+            existing_data = pickle.load(f)
+    else:
+        existing_data = []
+    existing_data.append(data)
+    with open(data_file, 'wb') as f:
+        pickle.dump(existing_data, f)
 def custom_activation(x):
     return np.where(x > -3, np.maximum(0, x), -x - 3)
 
@@ -153,10 +161,10 @@ if __name__ == '__main__':
                 # head reset for new task
                 net.layers[-1].weight.data.zero_()
                 net.layers[-1].bias.data.zero_()
-            # Final save
-            save_data({
-                'last100_accuracies' :historical_accuracies.cpu(),
-                'time per task'  : training_time/num_tasks, #Training Time
-                'task_activations': task_activations.cpu(),
-            }, data_file)
+        # Final save
+        save_data({
+            'last100_accuracies' :historical_accuracies.cpu(),
+            'time per task'  : training_time/num_tasks, #Training Time
+            'task_activations': task_activations.cpu(),
+        }, data_file)
 
