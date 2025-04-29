@@ -23,12 +23,17 @@ def plot_average_ttp(file_paths, window_size=1, selected_indices=[0,1,2,3,4]):
     plt.figure(figsize=(12, 5.8))
 
     for i1, path in enumerate(file_paths):
-        data = load_data(path)["last100_accuracies"].numpy()
+        data = load_data(path)
+        data = data[0]["last100_accuracies"]
+
         for i2, x in enumerate(data):
-            if i2 % 500 == 0:
+            if i2 % 25 == 0:
                 x_pos.append(i2)
                 all_ttp_values.append(x[0])
-        plt.plot(x_pos, all_ttp_values, label=labels[i1])
+
+        smoothed_values = np.convolve(all_ttp_values, np.ones(4) / 4, mode='valid')
+        adjusted_x = x_pos[:len(smoothed_values)]
+        plt.plot(adjusted_x, smoothed_values, label=labels[i1])
     plt.xlabel('Task')
     plt.ylabel('Accuracy')
     plt.legend()
@@ -100,15 +105,15 @@ def activation(filepaths):
     for file_path in filepaths:
         with open(file_path, 'rb') as file:
             data_list.append(pickle.load(file))
-    activations = [data['task_activations'] for data in data_list]
+    activations = [data[0]['task_activations'] for data in data_list]
     labels = ["Relu"]
     colors = ["red","blue","green", "brown", "pink"]
     for activation, label, color in zip(activations, labels, colors):
         print(len(activation))
         frames =[]
-        for i in range(11):#20
+        for i in range(203):#20
             #i*=50
-            plt.figure(figsize=(8, 6))  # Optional: Adjust figure size for better clarity
+            plt.figure(figsize=(6, 6))  # Optional: Adjust figure size for better clarity
             data = activation[i][0, 0, 0].flatten()
             mean_value = np.mean(data.cpu().numpy())  # Convert tensor to NumPy before computing mean
             sns.kdeplot(data, fill=True, alpha=0.2, label=label, color="blue")  # KDE plot
@@ -117,10 +122,11 @@ def activation(filepaths):
             plt.ylim(0, 0.5)
             plt.grid(True)
             plt.legend()
-            plt.title("Task : " + str(i*10))
-            plt.tight_layout()
+            plt.title("Task : " + str(i*25))
             plt.xlabel('Parameter Values')
             plt.ylabel('Density')
+            plt.tight_layout()
+
             filename = f"frame_{i}.png"
             plt.savefig(filename)
             frames.append(filename)
@@ -130,8 +136,8 @@ def activation(filepaths):
             for frame in frames: writer.append_data(imageio.imread(frame))
 if __name__ == "__main__":
     file_paths = [
-        "relu.pkl"
+        "relu0.pkl"
     ]  # Add both files
-    #plot_average_ttp(file_paths)
+    plot_average_ttp(file_paths)
     #timepertask(file_paths)
     activation(file_paths)
