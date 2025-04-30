@@ -80,14 +80,14 @@ if __name__ == '__main__':
     for run in range(runs):
         data_file = "relu" + str(run) + ".pkl"
         # Initialize network
-        net = ConvNet(activation="relu")
+        net = ConvNet(activation="reludown")
         # Initialize learner
         learner = Backprop(
             net=net,
             step_size=0.01,
             weight_decay=0,
             device=dev,
-            momentum=0.9,)
+            momentum=0.9)
 
         # Load class order
         with open('class_order', 'rb') as f:class_order = pickle.load(f)[run]
