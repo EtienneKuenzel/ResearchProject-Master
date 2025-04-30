@@ -23,6 +23,7 @@ class ConvNet(nn.Module):
         # Determine activation function
         if activation.lower() == "relu":
             self.act_fn = nn.ReLU
+            print("A")
         elif activation.lower() == "sig":
             self.act_fn = nn.Sigmoid
         elif activation.lower() == "tanh":
@@ -35,7 +36,8 @@ class ConvNet(nn.Module):
             self.act_fn = SquaredActivation
         elif activation.lower() == "sinlin":
             self.act_fn = LinearSinusActivation
-        elif activation.lower() == "RELu+down":
+        elif activation.lower() == "reludown":
+            print("B")
             self.act_fn = ReLUdown
         # Architecture
         self.layers = nn.ModuleList([
