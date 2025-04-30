@@ -15,34 +15,45 @@ def load_data(file_path):
 
 
 
-def plot_average_ttp(file_paths, window_size=1, selected_indices=[0,1,2,3,4]):
-    all_ttp_values = []
-    x_pos = []
-    labels = ['Relu',"Relu+down+decrease 0.05","Relu+down+decrease 0.10", "Relu+down+decrease 0.15", "Relu+down(Convolutions locked)", "Relu+down(FC locked)"]
-    colors = ['r', 'b', 'g', 'brown', 'pink', "purple", "r"]
+import numpy as np
+import matplotlib.pyplot as plt
+import pickle
+
+def load_data(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
+
+def plot_average_ttp(file_paths, window_size=4, selected_indices=[0, 1,4,3,4]):
+    labels = ['Relu', "Relu+down+decrease 0.05", "Relu+down+decrease 0.10",
+              "Relu+down+decrease 0.15", "Relu+down(Convolutions locked)",
+              "Relu+down(FC locked)"]
+    colors = ['r', 'b', 'g', 'brown', 'pink', "purple"]
+
     plt.figure(figsize=(12, 5.8))
 
     for i1, path in enumerate(file_paths):
-        data = load_data(path)
-        data = data[0]["last100_accuracies"]
-
-        for i2, x in enumerate(data):
-            if i2 % 25 == 0:
-                x_pos.append(i2)
-                all_ttp_values.append(x[0])
-
-        smoothed_values = np.convolve(all_ttp_values, np.ones(4) / 4, mode='valid')
-        adjusted_x = x_pos[:len(smoothed_values)]
-        plt.plot(adjusted_x, smoothed_values, label=labels[i1])
+        run_smoothed = []
+        for run_idx in selected_indices:
+            data = load_data(path + str(run_idx) + ".pkl")
+            data = data[0]["last100_accuracies"]
+            values = [x[0] for i, x in enumerate(data) if i % 25 == 0]
+            smoothed = np.convolve(values, np.ones(window_size) / window_size, mode='valid')
+            run_smoothed.append(smoothed)
+        run_smoothed = np.array(run_smoothed)
+        mean_vals = np.mean(run_smoothed, axis=0)
+        std_vals = np.std(run_smoothed, axis=0)
+        x_pos = np.arange(0, 25 * len(mean_vals), 25)
+        plt.plot(x_pos, mean_vals, label=labels[i1], color=colors[i1])
+        plt.fill_between(x_pos, mean_vals - std_vals, mean_vals + std_vals,color=colors[i1], alpha=0.3)
     plt.xlabel('Task')
     plt.ylabel('Accuracy')
     plt.legend()
-    plt.xlim(-10,5000)
-    plt.ylim(0,1)
+    plt.xlim(0, 5000)
+    plt.ylim(0.5, 1)
     plt.grid(True)
     plt.tight_layout()
-
     plt.show()
+
 
 
 def compute_average_ttp(data, selected_indices, num_segments=8, segment_size=10):
@@ -122,7 +133,7 @@ def activation(filepaths):
             plt.ylim(0, 0.5)
             plt.grid(True)
             plt.legend()
-            plt.title("Task : " + str(i*25))
+            #plt.title("Task : " + str(i*25))
             plt.xlabel('Parameter Values')
             plt.ylabel('Density')
             plt.tight_layout()
@@ -136,7 +147,7 @@ def activation(filepaths):
             for frame in frames: writer.append_data(imageio.imread(frame))
 if __name__ == "__main__":
     file_paths = [
-        "relu0.pkl"
+        "relu"
     ]  # Add both files
     plot_average_ttp(file_paths)
     #timepertask(file_paths)
