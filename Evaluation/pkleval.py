@@ -5,7 +5,7 @@ import seaborn as sns
 import imageio
 import numpy as np
 import matplotlib.pyplot as plt
-
+import torch
 def load_data(file_path):
     with open(file_path, 'rb') as f:
         data = pickle.load(f)
@@ -23,11 +23,11 @@ def load_data(path):
     with open(path, "rb") as f:
         return pickle.load(f)
 
-def plot_average_ttp(file_paths, window_size=4, selected_indices=[0, 1,4,3,4]):
-    labels = ['Relu', "Relu+down+decrease 0.05", "Relu+down+decrease 0.10",
-              "Relu+down+decrease 0.15", "Relu+down(Convolutions locked)",
+def plot_average_ttp(file_paths, window_size=4, selected_indices=[0,1,2]):
+    labels = ['Relu', "Relu+down", "Tanh",
+              "PAU", "Relu+down(Convolutions locked)",
               "Relu+down(FC locked)"]
-    colors = ['r', 'b', 'g', 'brown', 'pink', "purple"]
+    colors = ["#045275", "#089099", "#7CCBA2", "#F0746E", "#DC3977", "#7C1D6F"]
 
     plt.figure(figsize=(12, 5.8))
 
@@ -55,69 +55,97 @@ def plot_average_ttp(file_paths, window_size=4, selected_indices=[0, 1,4,3,4]):
     plt.show()
 
 
-
-def compute_average_ttp(data, selected_indices, num_segments=8, segment_size=10):
-    ttp_regain_values = np.array([data['last100_accuracies'][0].numpy()])
-    i = 0
-    a = []
-    for x in ttp_regain_values[0]:
-        if x[0] < 10 and  len(a)<20:
-            a.append(i)
-        i+=1
-    all_averages = [np.mean([ttp_regain_values[0][x]], axis=0) for x in a]
-    return np.mean(all_averages, axis=0)
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 
 
-def plot_average_ttpregain(file_paths):
-    plt.figure(figsize=(12, 5))  # Increase DPI for sharpness
-    labels = ["Relu", "Relu+down", "Relu+down+\nswap", "Relu+down+\ndecrease", "Relu+down+\ndecrease+swap", "a", "b"]
-    colors = ['r', 'b', 'g', 'brown', 'pink', "purple", "r"]
+def plot_stability(file_paths, window_size=4, selected_indices=[0,1,2,3]):
+    labels = ['Relu', "Relu+down", "Tanh", "DBP"]
+    colors = ["#045275", "#089099", "#7CCBA2", "#FCDE9C", "#F0746E", "#DC3977", "#7C1D6F"]
 
-    selected_indices = [0]  # Indices to use
+    plt.figure(figsize=(12, 5.8))
     means = []
-    stds = []
-    valid_labels = []
-    valid_colors = []
 
-    for file_path, label, color in zip(file_paths, labels, colors):
-        try:
-            data = load_data(file_path)
-            final_average = compute_average_ttp(data, selected_indices)
-            mean_val = final_average.mean()
-            std_val = final_average.std()
-            print(f"{label}: Mean={mean_val}, Std={std_val}")
-            means.append(mean_val/9)
-            stds.append(std_val/9)
-            valid_labels.append(label)
-            valid_colors.append(color)
-        except Exception as e:
-            print(f"Skipping {label} due to error: {e}")
+    for i1, path in enumerate(file_paths):
+        mean = []
+        b=[]
+        for run_idx in selected_indices:
+            data = load_data(path + str(run_idx) + ".pkl")
+            last100 = data[0]["last100_accuracies"]
+            a = [sum(x[1:]) / len(x[1:]) for i, x in enumerate(last100) if i % 25 == 0 and i > 4000]
+            mean.append(sum(a) / len(a))
+        means.append(np.mean(mean))
+
+    x_labels = [f"Group {i}" for i in range(len(means))]
+    barlist = plt.bar(labels, means)
+
+    # Apply colors if number of file_paths <= number of colors
+    for i, bar in enumerate(barlist):
+        if i < len(colors):
+            bar.set_color(colors[i])
+
+    plt.xlabel('Configuration')
+    plt.ylabel('Accuracy')
+    plt.ylim(0.5, 1.0)
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+import matplotlib.pyplot as plt
+import torch  # Ensure torch is imported
+import numpy as np
+
+def plot_stabilityline(file_paths, window_size=4, selected_indices=[0, 1, 2, 3]):
+    labels = ['Relu', "Relu+down", "Tanh", "DBP"]
+    colors = ["#045275", "#089099", "#7CCBA2", "#FCDE9C", "#F0746E", "#DC3977", "#7C1D6F"]
+
+    plt.figure(figsize=(12, 5.8))
+
+    for i1, path in enumerate(file_paths):
+        accumulated = []
+
+        for run_idx in selected_indices:
+            data = load_data(path + str(run_idx) + ".pkl")
+            last100 = data[0]["last100_accuracies"]
+            subset = last100[::25][-20:]
+
+            average_tensor = subset.mean(dim=0)
+            accumulated.append(average_tensor)
+
+        # Average across runs
+        overall_mean = torch.stack(accumulated).mean(dim=0).numpy()
+
+        # Plot line
+        plt.plot(overall_mean, label=labels[i1], color=colors[i1])
+
+    plt.xlabel("Class Index")
+    plt.ylabel("Accuracy")
+    plt.title("Stability Over Final 100 Classes (Sampled Every 25)")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
-    if len(means) == len(valid_labels) == len(stds) == len(valid_colors):
-        plt.bar(valid_labels, means, yerr=stds, capsize=8, color=valid_colors, alpha=0.85, edgecolor='black', linewidth=1.2)
-        plt.ylabel('Epochs to Relearn the older tasks', fontsize=12)
-        plt.xticks(rotation=45, fontsize=10)
-        plt.yticks(fontsize=10)
-        plt.grid(axis='y', linestyle='--', alpha=0.6, linewidth=0.7)
-        plt.show()
-    else:
-        print("Error: Mismatch in data lengths, skipping plot.")
+
 
 
 def timepertask(filepaths):
+    selected_indices=[0]
     for path in filepaths:
-        data = load_data(path)
-        print(data['time per task'])
+        a = []
+        for run_idx in selected_indices:
+            data = load_data(path + str(run_idx) + ".pkl")
+            a.append(data[0]['time per task'])
+        print(sum(a) / len(a))
 def activation(filepaths):
     data_list = []
     for file_path in filepaths:
         with open(file_path, 'rb') as file:
             data_list.append(pickle.load(file))
     activations = [data[0]['task_activations'] for data in data_list]
-    labels = ["Relu"]
+    labels = ["ReLU"]
     colors = ["red","blue","green", "brown", "pink"]
     for activation, label, color in zip(activations, labels, colors):
         print(len(activation))
@@ -129,13 +157,14 @@ def activation(filepaths):
             mean_value = np.mean(data.cpu().numpy())  # Convert tensor to NumPy before computing mean
             sns.kdeplot(data, fill=True, alpha=0.2, label=label, color="blue")  # KDE plot
             plt.axvline(mean_value, linestyle="dashed", color="red", alpha=0.8, linewidth=2, label=f"{label} Mean")  # Mean line
+            plt.legend(prop={'weight': 'bold', 'size': 16})  # bold and larger text
             plt.xlim(-20, 20)
             plt.ylim(0, 0.5)
+            plt.xticks(fontsize=12, fontweight='bold')
+            plt.yticks(fontsize=12, fontweight='bold')
             plt.grid(True)
-            plt.legend()
-            #plt.title("Task : " + str(i*25))
-            plt.xlabel('Parameter Values')
-            plt.ylabel('Density')
+            plt.xlabel('Parameter Values', fontsize=14, fontweight='bold')
+            plt.ylabel('Density', fontsize=14, fontweight='bold')
             plt.tight_layout()
 
             filename = f"frame_{i}.png"
@@ -147,8 +176,14 @@ def activation(filepaths):
             for frame in frames: writer.append_data(imageio.imread(frame))
 if __name__ == "__main__":
     file_paths = [
-        "relu"
+        "relu",
+        "reludown",
+        "tanh",
+        "dbpreludown"
+        #"leakyrelu2.pkl"
     ]  # Add both files
-    plot_average_ttp(file_paths)
     #timepertask(file_paths)
-    activation(file_paths)
+    #plot_stability(file_paths)
+    #plot_stabilityline(file_paths)
+    plot_average_ttp(file_paths)
+    #activation(file_paths)
