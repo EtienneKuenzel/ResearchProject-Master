@@ -122,7 +122,7 @@ if __name__ == '__main__':
             training_time += (time.time() - start_time)
             #Eval 100 tasks
             if task_idx%eval_every_tasks ==0:
-                """# Current Task Activations
+                # Current Task Activations
                 activations = {}
                 inputs_to_activations = {}
                 hooks = []
@@ -138,7 +138,7 @@ if __name__ == '__main__':
 
                 for layer in ["fc1", "fc2"]:
                     task_activations[int(task_idx/eval_every_tasks)][0][int(layer[-1]) - 1] = torch.tensor(average_activation_input(activations, layer=layer), dtype=torch.float32)
-                for hook in hooks: hook.remove()"""
+                for hook in hooks: hook.remove()
                 #learner.prune_merge_neurons(task_activations, task_idx) #Correlation Algorithm
                 #Stability/Plasticity Eval
                 for t, previous_task_idx in enumerate(np.arange(max(0, task_idx - 9), task_idx + 1)):
