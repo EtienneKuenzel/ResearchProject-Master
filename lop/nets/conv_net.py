@@ -61,8 +61,6 @@ class ConvNet(nn.Module):
         x5 = self.layers[9](self.layers[8](x4))
         x6 = self.layers[10](x5)
         return x6, [x1, x2, x3, x4, x5]
-
-
 class ConvNet_PAU(nn.Module):
     def __init__(self, num_classes=2):
         """

@@ -8,7 +8,125 @@ from torch.utils.data import TensorDataset, DataLoader
 import torch.nn.functional as F
 import torch.autograd as autograd
 import torch.nn.init as init
+from torch import optim
+from lop.algos.convGnT import ConvGnT
+import torch.nn.functional as F
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
+class VAE(nn.Module):
+    def __init__(self, z_dim=128, num_classes=2):
+        super().__init__()
+        self.z_dim = z_dim
+        self.num_classes = num_classes
+        self.label_embed_dim = 16  # Embedding dimension for label
+
+        # Embedding layer for labels
+        self.label_emb = nn.Embedding(num_classes, self.label_embed_dim)
+
+        # Encoder: image + label → latent (mu, logvar)
+        self.encoder = nn.Sequential(
+            nn.Conv2d(3 + 1, 32, 4, 2, 1),  # input = [B, 4, 32, 32]
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 4, 2, 1),     # [B, 64, 16, 16]
+            nn.ReLU(),
+            nn.Conv2d(64, 128, 4, 2, 1),    # [B, 128, 8, 8]
+            nn.ReLU(),
+            nn.Flatten()
+        )
+        self.fc_mu = nn.Linear(128 * 4 * 4, z_dim)
+        self.fc_logvar = nn.Linear(128 * 4 * 4, z_dim)
+
+        # Decoder: z + label → image
+        self.decoder_input = nn.Linear(z_dim + self.label_embed_dim, 128 * 4 * 4)
+        self.decoder = nn.Sequential(
+            nn.Unflatten(1, (128, 4, 4)),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1),  # [B, 64, 8, 8]
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1),   # [B, 32, 16, 16]
+            nn.ReLU(),
+            nn.ConvTranspose2d(32, 3, 4, 2, 1),    # [B, 3, 32, 32]
+            nn.Sigmoid()  # normalize output to [0,1]
+        )
+
+    def sample(self, n_samples, device='cuda'):
+        half = n_samples // 2
+
+        # Create labels: half 0s, half 1s
+        y = torch.cat([
+            torch.zeros(half, dtype=torch.long),
+            torch.ones(n_samples - half, dtype=torch.long)
+        ]).to(device)
+
+        # Sample z from standard normal
+        z = torch.randn(n_samples, self.z_dim).to(device)
+        gen_x = self.decode(z, y)  # shape [n_samples, 3, 32, 32]
+        gen_y = y  # shape [n_samples]
+
+        return gen_x, gen_y
+    def encode(self, x, y):
+        y_img = self.label_emb(y).unsqueeze(2).unsqueeze(3)  # [B, embed, 1, 1]
+        y_img = y_img.expand(-1, -1, x.size(2), x.size(3))   # [B, embed, 32, 32]
+        y_img = y_img[:, :1, :, :]  # use 1 channel for label to match image
+        x_input = torch.cat([x, y_img], dim=1)  # [B, 4, 32, 32]
+        h = self.encoder(x_input)
+        mu = self.fc_mu(h)
+        logvar = self.fc_logvar(h)
+        return mu, logvar
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mu + eps * std
+
+    def decode(self, z, y):
+        y_emb = self.label_emb(y)
+        z_cond = torch.cat([z, y_emb], dim=1)
+        h = self.decoder_input(z_cond)
+        x_recon = self.decoder(h)
+        return x_recon
+
+    def forward(self, x, y):
+        mu, logvar = self.encode(x, y)
+        z = self.reparameterize(mu, logvar)
+        recon_x = self.decode(z, y)
+        return recon_x, mu, logvar
+
+
+class ConvCBP(object):
+    """
+    The Continual Backprop algorithm
+    """
+    def __init__(self, net, step_size=0.001, loss='mse', opt='sgd', beta=0.9, beta_2=0.999, replacement_rate=0.0001,
+                 decay_rate=0.9, init='kaiming', util_type='contribution', maturity_threshold=100, device='cpu',
+                 momentum=0, weight_decay=0):
+        self.net = net
+        self.opt = optim.SGD(self.net.parameters(), lr=step_size, momentum=momentum, weight_decay=weight_decay)
+        self.loss_func = F.cross_entropy
+        self.previous_features = None
+        self.gnt = ConvGnT(
+            net=self.net.layers,
+            hidden_activation=self.net.act_type,
+            opt=optim.SGD(self.net.parameters(), lr=step_size, momentum=momentum, weight_decay=weight_decay),
+            replacement_rate=replacement_rate,
+            decay_rate=decay_rate,
+            init=init,
+            num_last_filter_outputs=net.last_filter_output,
+            util_type=util_type,
+            maturity_threshold=maturity_threshold,
+            device=device,
+        )
+
+    def learn(self, x, target):
+        output, features = self.net.predict(x=x)
+        loss = self.loss_func(output, target)
+        self.previous_features = features
+        loss.backward()
+        self.opt.step()
+        self.opt.zero_grad()
+        self.gnt.gen_and_test(features=self.previous_features)
+        return loss.detach(), output
 class Backprop(object):
     def __init__(self, net, step_size=0.001, weight_decay=0.0, device='cpu', momentum=0):
         self.net = net
@@ -143,4 +261,15 @@ class EWC_Policy(object):
         loss.backward()
         self.opt.step()
         return loss.detach(), output.detach()
-
+class Backprop(object):
+    def __init__(self, net, step_size=0.001, weight_decay=0.0, device='cpu', momentum=0):
+        self.net = net
+        self.device = device
+        self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
+        self.loss_func = F.cross_entropy
+    def learn(self, x, target, task,decrease=0 ):
+        self.opt.zero_grad()
+        output, features = self.net.predict(x=x)
+        loss = self.loss_func(output, target.long())
+        self.opt.step()
+        return loss.detach(), output.detach()

@@ -1,7 +1,7 @@
 import torch
 import pickle
 from tqdm import tqdm
-from lop.algos.bp import Backprop, EWC_Policy
+from lop.algos.bp import Backprop, EWC_Policy, ConvCBP, VAE
 from lop.nets.conv_net import ConvNet_PAU, ConvNet_TENT, ConvNet
 from torch.nn.functional import softmax
 from lop.nets.linear import MyLinear
@@ -14,6 +14,41 @@ import torch.nn as nn
 import time as time
 import os
 import torch.nn.init as init
+import matplotlib.pyplot as plt
+import torchvision
+import matplotlib.pyplot as plt
+import torchvision
+
+import torch
+import torchvision
+import matplotlib.pyplot as plt
+
+import torch
+import torchvision
+import matplotlib.pyplot as plt
+
+def rescale(img):
+    """Stretch image tensor values to [0, 1] for display."""
+    min_val = img.min()
+    max_val = img.max()
+    return (img - min_val) / (max_val - min_val + 1e-5)
+
+def show_images(images, nrow=30):
+    images = images.cpu().detach()
+    images = images[:nrow * nrow]
+
+    # Rescale each image individually
+    images = torch.stack([rescale(img) for img in images])
+
+    # Make grid
+    grid_img = torchvision.utils.make_grid(images, nrow=nrow, padding=2)
+    np_img = grid_img.permute(1, 2, 0).numpy()
+
+    plt.figure(figsize=(8, 8))
+    plt.imshow(np_img)
+    plt.axis('off')
+    plt.tight_layout()
+    plt.show()
 
 # Function to display a batch of images
 def get_activation(name):
@@ -41,7 +76,7 @@ def average_activation_input(activations, layer):
 def load_imagenet(classes=[]):
     x_train, y_train, x_test, y_test = [], [], [], []
     for idx, _class in enumerate(classes):
-        data_file = 'data/classes/' + str(_class) + '.npy'
+        data_file = "D:/ResearchProject-Master/lop/imagenet/data/classes/" + str(_class) + ".npy"#'data/classes/' + str(_class) + '.npy'
         new_x = np.load(data_file)
         x_train.append(new_x[:600])
         x_test.append(new_x[600:])
@@ -65,22 +100,26 @@ def save_data(data, data_file):
         pickle.dump(existing_data, f)
 def custom_activation(x):
     return np.where(x > -3, np.maximum(0, x), -x - 3)
-
+def vae_loss(recon_x, x, mu, logvar):
+    recon_loss = F.binary_cross_entropy(recon_x, x, reduction='sum')
+    kl_div = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+    return recon_loss + kl_div
 if __name__ == '__main__':
-    num_tasks = 5050
+    num_tasks = 5100
     mini_batch_size = 100
     num_epochs =  250
     eval_every_tasks = 25
     runs = 5
+    dgr = True
     # Device setup
     dev = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
     for run in range(runs):
-        data_file = "relu" + str(run) + ".pkl"
+        data_file = "dgr" + str(run) + ".pkl"
         # Initialize network
-        net = ConvNet(activation="reludown")
+        net = ConvNet(activation="relu")
         # Initialize learner
         learner = Backprop(
             net=net,
@@ -88,7 +127,6 @@ if __name__ == '__main__':
             weight_decay=0,
             device=dev,
             momentum=0.9)
-
         # Load class order
         with open('class_order', 'rb') as f:class_order = pickle.load(f)[run]
         class_order = np.concatenate([class_order] * ((2 * num_tasks) // 1000 + 1))
@@ -104,18 +142,40 @@ if __name__ == '__main__':
         # Training loop
         for task_idx in range(num_tasks):
             start_time = time.time()
-            print("Run : "+ str(run)+ " Task : " + str(task_idx))
+            print("Run : " + str(run) + " Task : " + str(task_idx))
             x_train, y_train, x_test, y_test = load_imagenet(class_order[task_idx * 2:(task_idx + 1) * 2])
             x_train, x_test = x_train.float(), x_test.float()
             x_train, y_train = x_train.to(dev), y_train.to(dev)
             x_test, y_test = x_test.to(dev), y_test.to(dev)
+            # If not the first task, generate replay data from previous tasks
+            if task_idx > 0 and dgr:
+                x_train = x_train[:len(x_train) // 2]
+                y_train = y_train[:len(y_train) // 2]
+                x_test = x_test[:len(x_test) // 2]
+                y_test = y_test[:len(y_test) // 2]
+                with torch.no_grad():
+                    gen_x, gen_y = vae.sample(600, device=dev)
+                gen_x, gen_y = gen_x.to(dev), gen_y.to(dev)
+                x_train = torch.cat([x_train, gen_x], dim=0)
+                y_train = torch.cat([y_train, gen_y], dim=0)
+            if dgr:
+                vae = VAE(z_dim=128).to(dev)
+                optimizer = torch.optim.Adam(vae.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0)
 
             for epoch_idx in range(num_epochs):
-                example_order = np.random.permutation(1200)
+                print(epoch_idx)
+                example_order = torch.randperm(x_train.size(0))
                 x_train, y_train = x_train[example_order], y_train[example_order]
+                #show_images(vae.sample(600, device=dev)[0])
                 for i, start_idx in enumerate(range(0, 1200, mini_batch_size)):
                     batch_x = x_train[start_idx:start_idx + mini_batch_size]
                     batch_y = y_train[start_idx:start_idx + mini_batch_size]
+                    if dgr:
+                        optimizer.zero_grad()
+                        recon_x, mu, logvar = vae(batch_x, batch_y)
+                        loss = vae_loss(recon_x, rescale(batch_x), mu, logvar)
+                        loss.backward()
+                        optimizer.step()
                     loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0)
             weight_layer[task_idx] = net.layers[-1].weight.data
             bias_layer[task_idx] = net.layers[-1].bias.data
