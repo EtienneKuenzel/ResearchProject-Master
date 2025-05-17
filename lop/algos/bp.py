@@ -261,15 +261,3 @@ class EWC_Policy(object):
         loss.backward()
         self.opt.step()
         return loss.detach(), output.detach()
-class Backprop(object):
-    def __init__(self, net, step_size=0.001, weight_decay=0.0, device='cpu', momentum=0):
-        self.net = net
-        self.device = device
-        self.opt = optim.SGD(self.net.parameters(), lr=step_size, weight_decay=weight_decay, momentum=momentum)
-        self.loss_func = F.cross_entropy
-    def learn(self, x, target, task,decrease=0 ):
-        self.opt.zero_grad()
-        output, features = self.net.predict(x=x)
-        loss = self.loss_func(output, target.long())
-        self.opt.step()
-        return loss.detach(), output.detach()
