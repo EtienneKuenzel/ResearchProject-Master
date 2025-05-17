@@ -16,22 +16,19 @@ import os
 import torch.nn.init as init
 import matplotlib.pyplot as plt
 import torchvision
-import matplotlib.pyplot as plt
-import torchvision
 
-import torch
-import torchvision
-import matplotlib.pyplot as plt
 
-import torch
-import torchvision
-import matplotlib.pyplot as plt
+def rescale(img: torch.Tensor) -> torch.Tensor:
+    """Efficiently normalize image tensor to [0, 1] for CPU."""
+    if img.requires_grad:
+        img = img.detach()
 
-def rescale(img):
-    """Stretch image tensor values to [0, 1] for display."""
-    min_val = img.min()
-    max_val = img.max()
-    return (img - min_val) / (max_val - min_val + 1e-5)
+    min_val = torch.amin(img)
+    max_val = torch.amax(img)
+    scale = max_val - min_val
+    if scale < 1e-5:
+        return img - min_val  # All values are nearly identical
+    return (img - min_val) / scale
 
 def show_images(images, nrow=30):
     images = images.cpu().detach()
@@ -112,7 +109,7 @@ if __name__ == '__main__':
     runs = 5
     dgr = True
     # Device setup
-    dev = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+    dev = torch.device("cuda:1") if torch.cuda.is_available() else torch.device("cpu")
     if torch.cuda.is_available():
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
@@ -176,7 +173,7 @@ if __name__ == '__main__':
                         loss = vae_loss(recon_x, rescale(batch_x), mu, logvar)
                         loss.backward()
                         optimizer.step()
-                    loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0)
+                    loss, network_output = learner.learn(x=batch_x, target=batch_y,task=task_idx, decrease=0)#braucht 90% der zeitläuft langsamer probably wegen dem decrease
             weight_layer[task_idx] = net.layers[-1].weight.data
             bias_layer[task_idx] = net.layers[-1].bias.data
             training_time += (time.time() - start_time)
